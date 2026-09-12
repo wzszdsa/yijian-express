@@ -1,8 +1,7 @@
-import type { Config } from '@netlify/functions'
-import { userFromRequest } from './_shared/auth.mts'
-import { bodyOf, internalError, json, methodNotAllowed } from './_shared/http.mts'
-import { queryTracking, recognizeTrackingNo } from './_shared/kuaidi100.mts'
-import { saveParcel } from './_shared/parcels.mts'
+import { userFromRequest } from '../_shared/auth.mjs'
+import { bodyOf, internalError, json, methodNotAllowed } from '../_shared/http.mjs'
+import { queryTracking, recognizeTrackingNo } from '../_shared/kuaidi100.mjs'
+import { saveParcel } from '../_shared/parcels.mjs'
 
 function normalizeTrackingNo(value: unknown): string | null {
   const trackingNo = typeof value === 'string' ? value.trim().replace(/\s/g, '') : ''
@@ -34,4 +33,4 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/parcels/query-tracking', method: 'POST' }
+

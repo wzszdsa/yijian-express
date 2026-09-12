@@ -1,5 +1,5 @@
-import { env } from './config.mts'
-import { SESSION_TTL_SECONDS } from './security.mts'
+import { env } from './config.mjs'
+import { SESSION_TTL_SECONDS } from './security.mjs'
 
 export function json(data: Record<string, unknown>, status = 200, headers?: HeadersInit): Response {
   const responseHeaders = new Headers(headers)
@@ -42,7 +42,9 @@ export function cookieValue(request: Request, name: string): string | null {
 }
 
 export function clientIp(request: Request): string {
-  return request.headers.get('x-nf-client-connection-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? request.headers.get('x-real-ip')
+    ?? 'unknown'
 }
 
 export function exposeDemoCode(): boolean {
@@ -54,3 +56,4 @@ export function internalError(scope: string, error: unknown): Response {
   console.error(`[yijian:${scope}]`, details)
   return json({ message: '服务暂时不可用，请稍后重试', code: 'SERVER_ERROR' }, 503)
 }
+

@@ -1,7 +1,6 @@
-import type { Config } from '@netlify/functions'
-import { setUserPassword, userFromRequest } from './_shared/auth.mts'
-import { bodyOf, internalError, json, methodNotAllowed } from './_shared/http.mts'
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from './_shared/security.mts'
+import { setUserPassword, userFromRequest } from '../_shared/auth.mjs'
+import { bodyOf, internalError, json, methodNotAllowed } from '../_shared/http.mjs'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../_shared/security.mjs'
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return methodNotAllowed()
@@ -25,4 +24,4 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/auth/set-password', method: 'POST' }
+

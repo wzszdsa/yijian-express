@@ -1,8 +1,7 @@
-import type { Config } from '@netlify/functions'
-import { readUserByEmail, saveUser, createPasswordHash, createSession, publicUser, parseAuthBody, verifyOtp, authResponse } from './_shared/auth.mts'
-import { internalError, json, methodNotAllowed } from './_shared/http.mts'
-import { isUniqueViolation } from './_shared/storage.mts'
-import { normalizeEmail, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from './_shared/security.mts'
+import { readUserByEmail, saveUser, createPasswordHash, createSession, publicUser, parseAuthBody, verifyOtp, authResponse } from '../_shared/auth.mjs'
+import { internalError, json, methodNotAllowed } from '../_shared/http.mjs'
+import { isUniqueViolation } from '../_shared/storage.mjs'
+import { normalizeEmail, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../_shared/security.mjs'
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return methodNotAllowed()
@@ -45,4 +44,5 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/auth/register', method: 'POST' }
+
+

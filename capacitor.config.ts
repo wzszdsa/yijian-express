@@ -1,6 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const serverUrl = process.env.CAPACITOR_SERVER_URL?.trim();
+const defaultServerUrl = 'https://wzzsl.cloud';
+const serverUrl = process.env.CAPACITOR_SERVER_URL === undefined
+  ? defaultServerUrl
+  : process.env.CAPACITOR_SERVER_URL.trim();
 
 const config: CapacitorConfig = {
   appId: 'com.yijian.parcels',

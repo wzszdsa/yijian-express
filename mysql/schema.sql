@@ -43,3 +43,47 @@ CREATE TABLE IF NOT EXISTS yijian_sessions (
   CONSTRAINT yijian_sessions_user_fk
     FOREIGN KEY (user_id) REFERENCES yijian_users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS yijian_parcels (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  tracking_no VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  carrier_code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  carrier_name VARCHAR(128) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT '运输中',
+  status_detail VARCHAR(512) NULL,
+  location VARCHAR(255) NULL,
+  pickup_code VARCHAR(128) NULL,
+  pickup_location VARCHAR(255) NULL,
+  eta VARCHAR(128) NULL,
+  last_synced_at DATETIME(3) NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY yijian_parcels_tracking_uq (user_id, tracking_no, carrier_code),
+  KEY yijian_parcels_user_synced_idx (user_id, last_synced_at),
+  CONSTRAINT yijian_parcels_user_fk
+    FOREIGN KEY (user_id) REFERENCES yijian_users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS yijian_parcel_events (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  parcel_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  event_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  event_at DATETIME(3) NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  location VARCHAR(255) NULL,
+  latitude DECIMAL(9,6) NULL,
+  longitude DECIMAL(9,6) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY yijian_parcel_events_key_uq (parcel_id, event_key),
+  KEY yijian_parcel_events_parcel_time_idx (parcel_id, event_at),
+  CONSTRAINT yijian_parcel_events_parcel_fk
+    FOREIGN KEY (parcel_id) REFERENCES yijian_parcels(id) ON DELETE CASCADE,
+  CONSTRAINT yijian_parcel_events_latitude_ck
+    CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+  CONSTRAINT yijian_parcel_events_longitude_ck
+    CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

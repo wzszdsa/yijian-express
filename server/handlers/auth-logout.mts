@@ -1,6 +1,5 @@
-import type { Config } from '@netlify/functions'
-import { destroySession } from './_shared/auth.mts'
-import { clearSessionCookie, json, methodNotAllowed } from './_shared/http.mts'
+import { destroySession } from '../_shared/auth.mjs'
+import { clearSessionCookie, json, methodNotAllowed } from '../_shared/http.mjs'
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return methodNotAllowed()
@@ -14,4 +13,5 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/auth/logout', method: 'POST' }
+
+

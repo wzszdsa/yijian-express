@@ -1,6 +1,6 @@
-import { consumeOtp, deleteSession, incrementOtpAttempts, readOtp, readSession, readUserByEmail as readStoredUserByEmail, readUserById as readStoredUserById, saveUser as saveStoredUser, setUserPassword as setStoredUserPassword, writeSession, type StoredOtp, type StoredSession, type StoredUser } from './storage.mts'
-import { bodyOf, clearSessionCookie, cookieValue, json, sessionCookie } from './http.mts'
-import { createToken, hashSecret, hashToken, OTP_MAX_ATTEMPTS, SESSION_TTL_SECONDS, verifySecret } from './security.mts'
+import { consumeOtp, deleteSession, incrementOtpAttempts, readOtp, readSession, readUserByEmail as readStoredUserByEmail, readUserById as readStoredUserById, saveUser as saveStoredUser, setUserPassword as setStoredUserPassword, writeSession, type StoredOtp, type StoredSession, type StoredUser } from './storage.mjs'
+import { bodyOf, clearSessionCookie, cookieValue, json, sessionCookie } from './http.mjs'
+import { createToken, hashSecret, hashToken, OTP_MAX_ATTEMPTS, SESSION_TTL_SECONDS, verifySecret } from './security.mjs'
 
 export type AuthPurpose = 'login' | 'register'
 export type UserRecord = StoredUser

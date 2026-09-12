@@ -1,10 +1,9 @@
-import type { Config } from '@netlify/functions'
-import { env } from './_shared/config.mts'
-import { readOtp, readUserByEmail, writeOtp, type StoredOtp } from './_shared/storage.mts'
-import { bodyOf, clientIp, exposeDemoCode, internalError, json, methodNotAllowed } from './_shared/http.mts'
-import { hashSecret, createOtpCode, normalizeEmail, OTP_MAX_PER_HOUR, OTP_RESEND_SECONDS, OTP_TTL_MS } from './_shared/security.mts'
-import type { AuthPurpose } from './_shared/auth.mts'
-import { sendVerificationEmail } from './_shared/email.mts'
+import { env } from '../_shared/config.mjs'
+import { readOtp, readUserByEmail, writeOtp, type StoredOtp } from '../_shared/storage.mjs'
+import { bodyOf, clientIp, exposeDemoCode, internalError, json, methodNotAllowed } from '../_shared/http.mjs'
+import { hashSecret, createOtpCode, normalizeEmail, OTP_MAX_PER_HOUR, OTP_RESEND_SECONDS, OTP_TTL_MS } from '../_shared/security.mjs'
+import type { AuthPurpose } from '../_shared/auth.mjs'
+import { sendVerificationEmail } from '../_shared/email.mjs'
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -61,4 +60,5 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/auth/send-code', method: 'POST' }
+
+

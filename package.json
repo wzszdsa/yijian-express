@@ -5,18 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && npm run typecheck:functions && vite build",
+    "build": "tsc -b && npm run typecheck:server && vite build && npm run build:server",
     "lint": "oxlint",
     "preview": "vite preview",
-    "dev:netlify": "npx --yes netlify-cli@latest dev",
-    "typecheck:functions": "tsc -p tsconfig.functions.json --noEmit"
+    "build:server": "tsc -p tsconfig.server.json",
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
+    "start": "node server-dist/index.mjs",
+    "dev:server": "npm run build:server && node server-dist/index.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
-    "@netlify/functions": "^6.0.0",
-    "@supabase/supabase-js": "^2.116.0",
     "lucide-react": "^1.42.0",
     "mysql2": "^3.24.4",
     "react": "^19.2.8",

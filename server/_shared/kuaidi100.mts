@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { env } from './config.mts'
+import { env } from './config.mjs'
 
 export type Kuaidi100TrackingCandidate = {
   trackingNo: string
@@ -196,4 +196,5 @@ export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Prom
     traces,
   }
 }
+
 

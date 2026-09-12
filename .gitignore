@@ -39,3 +39,11 @@ yijian-debug.apk
 
 # Supabase CLI machine-local metadata
 supabase/.temp/
+
+# Compiled standalone Node server
+server-dist
+server-data
+
+# Local deployment bundles
+output/*.tgz
+output/*.b64

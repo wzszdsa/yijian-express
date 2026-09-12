@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { env } from './config.mts'
+import { env } from './config.mjs'
 
 export type EmailDelivery = { provider: 'console' | 'resend'; demo: boolean }
 
@@ -26,3 +26,4 @@ export async function sendVerificationEmail(email: string, code: string): Promis
   if (result.error) throw new Error(`Resend 邮件发送失败: ${result.error.message}`)
   return { provider: 'resend', demo: false }
 }
+

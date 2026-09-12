@@ -1,6 +1,5 @@
-import type { Config } from '@netlify/functions'
-import { userFromRequest, publicUser } from './_shared/auth.mts'
-import { internalError, json, methodNotAllowed } from './_shared/http.mts'
+import { userFromRequest, publicUser } from '../_shared/auth.mjs'
+import { internalError, json, methodNotAllowed } from '../_shared/http.mjs'
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
@@ -13,4 +12,5 @@ export default async function handler(request: Request): Promise<Response> {
   }
 }
 
-export const config: Config = { path: '/api/auth/me', method: 'GET' }
+
+
