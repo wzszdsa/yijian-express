@@ -36,10 +36,11 @@ yijian-debug.apk
 .netlify
 
 .env
-
+.env.*
+!.env.example
 # Supabase CLI machine-local metadata
 supabase/.temp/
-
+supabase/**/.temp/
 # Compiled standalone Node server
 server-dist
 server-data
