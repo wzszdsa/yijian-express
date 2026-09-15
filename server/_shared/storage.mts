@@ -218,11 +218,20 @@ export async function saveUser(user: StoredUser): Promise<void> {
     await writeLocalRecord(`user:id:${user.id}`, user)
     return
   }
+  const passwordSetAt = user.passwordSetAt ?? (user.passwordHash ? user.updatedAt : null)
   await getMysqlPool().execute<ResultSetHeader>(
     `INSERT INTO ${USER_TABLE}
       (id,email,password_hash,email_verified_at,created_at,updated_at,password_set_at)
      VALUES (?,?,?,?,?,?,?)`,
-    [user.id, user.email, user.passwordHash ?? null, user.emailVerifiedAt ?? user.createdAt, user.createdAt, user.updatedAt, user.passwordSetAt ?? (user.passwordHash ? user.updatedAt : null)],
+    [
+      user.id,
+      user.email,
+      user.passwordHash ?? null,
+      new Date(user.emailVerifiedAt ?? user.createdAt),
+      new Date(user.createdAt),
+      new Date(user.updatedAt),
+      passwordSetAt ? new Date(passwordSetAt) : null,
+    ],
   )
 }
 
@@ -239,7 +248,7 @@ export async function setUserPassword(userId: string, passwordHash: string, pass
     `UPDATE ${USER_TABLE}
      SET password_hash = ?, password_set_at = ?, updated_at = ?
      WHERE id = ? AND password_hash IS NULL`,
-    [passwordHash, passwordSetAt, passwordSetAt, userId],
+    [passwordHash, new Date(passwordSetAt), new Date(passwordSetAt), userId],
   )
   return result.affectedRows > 0
 }
@@ -340,5 +349,4 @@ export function isUniqueViolation(error: unknown): boolean {
   const candidate = error as { code?: string | number; errno?: number }
   return candidate.code === 'ER_DUP_ENTRY' || candidate.errno === 1062
 }
-
 

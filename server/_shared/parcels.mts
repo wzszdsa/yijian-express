@@ -98,6 +98,16 @@ function styleFor(code: string | null, name: string | null): Pick<StoredParcel, 
   return { carrier, short: carrier.slice(0, 2), color: '#667785', pale: '#eef2f4' }
 }
 
+// 兜底：上游历史上曾把状态码（纯数字）写进 status_detail。
+// 这里做一层防护，避免把裸数字当成文案展示给用户。
+function readableDetail(status: StoredParcel['status'], detail: string | null): string {
+  const text = (detail ?? '').trim()
+  if (text && !/^\d+$/.test(text)) return text
+  if (status === '已完成') return '包裹已签收'
+  if (status === '待取件') return '包裹已到站，等待取件'
+  return '包裹运输中'
+}
+
 function parcelFromRow(row: ParcelRow, events: EventRow[]): StoredParcel {
   const style = styleFor(row.carrier_code, row.carrier_name)
   const parcelEvents = events.map((event, index) => ({
@@ -114,14 +124,14 @@ function parcelFromRow(row: ParcelRow, events: EventRow[]): StoredParcel {
     ...style,
     tracking: row.tracking_no,
     title: row.carrier_name ? `${row.carrier_name}包裹` : '快递包裹',
-    route: row.status_detail || '物流信息已同步',
+    route: readableDetail(row.status, row.status_detail),
     status: row.status,
     eta: row.eta || (row.status === '已完成' ? '已签收' : row.status === '待取件' ? '等待取件' : '运输中'),
     updated: displayTime(row.last_synced_at),
     location: row.location || '暂未返回当前位置',
     ...(row.pickup_code ? { code: row.pickup_code } : {}),
     ...(row.pickup_location ? { spot: row.pickup_location } : {}),
-    events: parcelEvents.length ? parcelEvents : [{ time: displayTime(row.last_synced_at), title: '物流信息已同步', text: row.status_detail || '等待快递公司返回最新轨迹。', active: true }],
+    events: parcelEvents.length ? parcelEvents : [{ time: displayTime(row.last_synced_at), title: '物流信息已同步', text: readableDetail(row.status, row.status_detail), active: true }],
   }
 }
 

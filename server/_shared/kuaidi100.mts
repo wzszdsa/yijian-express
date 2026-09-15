@@ -34,6 +34,17 @@ export type Kuaidi100Pickup = {
   location?: string
 }
 
+export const KUAIDI100_SUPPORTED_CARRIER_CODES: readonly string[] = ['shunfeng', 'jd', 'zto', 'yto', 'yunda', 'sto', 'jtexpress', 'deppon', 'ems', 'best', 'youshunda', 'anep', 'china_post', 'zjs']
+
+export class Kuaidi100InvalidTrackingError extends Error {
+  readonly code = 'INVALID_TRACKING_NO' as const
+
+  constructor() {
+    super('未查询到该平台对应的物流，请检查快递平台和运单号是否匹配')
+    this.name = 'Kuaidi100InvalidTrackingError'
+  }
+}
+
 function required(name: string): string {
   const value = env(name)?.trim()
   if (!value) throw new Error(`${name} 未配置`)
@@ -89,11 +100,20 @@ function messageFrom(payload: unknown): string | undefined {
   return firstText(record, ['message', 'msg', 'reason', 'errorMessage'])
 }
 
+function isInvalidTrackingResponse(payload: Record<string, unknown>): boolean {
+  const returnCode = String(payload.returnCode ?? '')
+  const message = messageFrom(payload) ?? ''
+  return returnCode === '201' || /不是有效的快递单号|运单号无效|运单号不存在|单号不存在|查无此单/.test(message)
+}
+
 function ensureSuccess(payload: unknown): void {
   if (!payload || typeof payload !== 'object') throw new Error('快递100返回了无效数据')
   const record = payload as Record<string, unknown>
   const status = record.status ?? record.success ?? record.result
-  if (status === false || status === '0' || status === 0) throw new Error(messageFrom(payload) ?? '快递100查询失败')
+  if (status === false || status === '0' || status === 0) {
+    if (isInvalidTrackingResponse(record)) throw new Kuaidi100InvalidTrackingError()
+    throw new Error(messageFrom(payload) ?? '快递100查询失败')
+  }
 }
 
 function sign(param: string, key: string, customer: string): string {
@@ -136,6 +156,27 @@ function normalizedStatus(value: unknown): string {
   return '运输中'
 }
 
+// 快递100 的 state 是物流状态码（数字），不是给人看的文案。
+// 上游通常不返回 stateEx，所以这里把状态码映射为可读文本，避免把裸数字存进 status_detail。
+const STATE_TEXT: Record<string, string> = {
+  '0': '快件在途中',
+  '1': '快件已揽收',
+  '2': '物流运输中，存在疑难',
+  '3': '快件已签收',
+  '4': '快件已退签',
+  '5': '快件派送中',
+  '6': '快件已退回',
+  '7': '快件转投中',
+  '8': '快件清关中',
+  '14': '快件已拒签',
+}
+
+function stateText(value: unknown): string | undefined {
+  const state = String(value ?? '').trim()
+  if (!state) return undefined
+  return STATE_TEXT[state]
+}
+
 function tracesFrom(payload: Record<string, unknown>): Kuaidi100Trace[] {
   const raw = payload.data ?? payload.traces ?? payload.route
   if (!Array.isArray(raw)) return []
@@ -155,25 +196,6 @@ function tracesFrom(payload: Record<string, unknown>): Kuaidi100Trace[] {
   }).filter((item) => item.description)
 }
 
-export async function recognizeTrackingNo(trackingNo: string): Promise<Kuaidi100TrackingCandidate[]> {
-  const url = `${env('KUAIDI100_RECOGNIZE_URL')?.trim() || 'https://www.kuaidi100.com/autonumber/autoComNum'}?text=${encodeURIComponent(trackingNo)}`
-  const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
-  if (!response.ok) throw new Error(`快递公司识别失败（HTTP ${response.status}）`)
-  const payload = await response.json() as { auto?: Array<{ comCode?: unknown; name?: unknown }> }
-  const candidates = (payload.auto ?? []).flatMap((item) => {
-    const carrierCode = optionalText(item.comCode)
-    return carrierCode ? [{ trackingNo, carrierCode, carrierName: optionalText(item.name) }] : []
-  })
-  if (candidates.length) return candidates
-
-  // 快递100的自动识别接口偶尔不会返回 JT/极兔，但查询接口支持其固定编码。
-  if (/^JT/i.test(trackingNo)) {
-    return [{ trackingNo, carrierCode: 'jtexpress', carrierName: '极兔速递' }]
-  }
-
-  throw new Error('未能识别快递公司，请确认运单号是否正确')
-}
-
 export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Promise<Kuaidi100TrackingDetail> {
   const resultv2 = env('KUAIDI100_RESULTV2')?.trim()
   const payload = await request('KUAIDI100_TRACK_QUERY_URL', {
@@ -184,11 +206,13 @@ export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Prom
   const record = payload as Record<string, unknown>
   const traces = tracesFrom(record)
   const latest = traces[0]
+  // record.status 是请求结果码（"200" 表示查询成功），不能当作物流状态或状态详情。
+  const statusText = stateText(record.state)
   return {
     carrierCode: firstText(record, ['com', 'companyCode']) ?? candidate.carrierCode,
     carrierName: firstText(record, ['company', 'companyName', 'comName']) ?? candidate.carrierName,
     status: normalizedStatus(record.state ?? record.stateEx ?? latest?.title),
-    statusDetail: firstText(record, ['state', 'stateEx', 'status', 'message']),
+    statusDetail: firstText(record, ['stateEx', 'statusText', 'stateName']) ?? statusText ?? latest?.description,
     location: firstText(record, ['location', 'currentLocation']) ?? latest?.location,
     eta: firstText(record, ['estimatedTime', 'estimateTime', 'eta']),
     ...(latest?.latitude !== undefined ? { latitude: latest.latitude } : {}),

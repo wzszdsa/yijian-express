@@ -8,6 +8,7 @@ import authRegister from './handlers/auth-register.mjs'
 import authSendCode from './handlers/auth-send-code.mjs'
 import authSetPassword from './handlers/auth-set-password.mjs'
 import parcelConfirmPickup from './handlers/parcel-confirm-pickup.mjs'
+import parcelDetectCarrier from './handlers/parcel-detect-carrier.mjs'
 import parcelList from './handlers/parcel-list.mjs'
 import parcelTrackingQuery from './handlers/parcel-tracking-query.mjs'
 import { json } from './_shared/http.mjs'
@@ -37,13 +38,14 @@ const routes = new Map<string, Handler>([
   ['POST /api/auth/send-code', authSendCode],
   ['POST /api/auth/set-password', authSetPassword],
   ['POST /api/parcels/confirm-pickup', parcelConfirmPickup],
+  ['POST /api/parcels/detect-carrier', parcelDetectCarrier],
   ['GET /api/parcels', parcelList],
   ['POST /api/parcels/query-tracking', parcelTrackingQuery],
 ])
 
 const port = Number(process.env.PORT || process.env.APP_PORT || 3000)
 const host = process.env.APP_HOST || '127.0.0.1'
-const publicOrigin = process.env.PUBLIC_ORIGIN || 'https://wzzsl.cloud'
+const publicOrigin = process.env.PUBLIC_ORIGIN || 'https://wzzsl.fun'
 const distRoot = path.resolve(process.env.WEB_ROOT || path.join(process.cwd(), 'dist'))
 const maxBodyBytes = Number(process.env.MAX_BODY_BYTES || 1024 * 1024)
 
