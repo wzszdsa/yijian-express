@@ -13,27 +13,41 @@ type AuthStatus = 'checking' | 'authenticated' | 'anonymous' | 'unavailable'
 type AuthUser = { id: string; email: string; createdAt: string; passwordSet?: boolean }
 type AuthResponse = { user?: AuthUser | null; message?: string; code?: string; retryAfter?: number; demoCode?: string }
 type SendCodeResult = { ok: boolean; status: number; retryAfter?: number; message?: string; code?: string }
-type ParcelQueryResponse = { parcels?: Parcel[]; parcel?: { trackingNo: string; status: Status }; message?: string; code?: string }
+type ParcelQueryResponse = { parcels?: Parcel[]; parcel?: { trackingNo: string; status: Status }; message?: string; code?: string; detection?: DetectionResult }
 type ParcelMutationResponse = { message?: string; code?: string }
 
 type Event = { time: string; title: string; text: string; active?: boolean; location?: string; lat?: number; lng?: number }
 type Parcel = { id: string; carrier: string; short: string; color: string; pale: string; tracking: string; title: string; route: string; status: Status; eta: string; updated: string; location: string; code?: string; spot?: string; events: Event[] }
-type Provider = { name: string; short: string; color: string; pale: string; connected: boolean; synced?: string; description: string }
+type Provider = { code?: string; name: string; short: string; color: string; pale: string; connected: boolean; synced?: string; description: string }
+
+type DetectionConfidence = 'high' | 'medium' | 'low'
+type DetectionEvidence = { type: string; value: string; note: string }
+type CarrierCandidate = { carrierCode: string; carrierName: string; short: string; confidence: DetectionConfidence; evidence: DetectionEvidence[] }
+type DetectionResult = { trackingNo: string; normalized: string; matched: boolean; best: CarrierCandidate | null; candidates: CarrierCandidate[]; unmatchedReason: string | null }
+type DetectionResponse = { detection?: DetectionResult; message?: string; code?: string }
+
 
 const initialParcels: Parcel[] = []
 
 const providerList: Provider[] = [
-  { name: '顺丰速运', short: '顺丰', color: '#ed6b4d', pale: '#fff0ea', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 状态同步' },
-  { name: '京东物流', short: '京东', color: '#4a6ff0', pale: '#edf2ff', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 配送状态' },
-  { name: '中通快递', short: '中通', color: '#1d9f73', pale: '#e9faf3', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 到站状态' },
-  { name: '圆通速递', short: '圆通', color: '#f0a334', pale: '#fff6e4', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 到站状态' },
-  { name: '韵达快递', short: '韵达', color: '#7659d6', pale: '#f1edff', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 到站状态' },
-  { name: '申通快递', short: '申通', color: '#ef7c35', pale: '#fff0e7', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 到站状态' },
-  { name: '极兔速递', short: '极兔', color: '#e95c72', pale: '#fff0f3', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 配送状态' },
-  { name: '德邦快递', short: '德邦', color: '#3193bf', pale: '#eaf7fc', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 配送状态' },
-  { name: 'EMS', short: 'EMS', color: '#2b7bb9', pale: '#eaf5fd', connected: true, synced: '实时', description: '自动识别 · 物流轨迹 · 配送状态' },
-  { name: '菜鸟/其他', short: '更多', color: '#667785', pale: '#eef2f4', connected: false, description: '支持快递100可识别的更多承运商' },
+  { code: 'shunfeng', name: '顺丰速运', short: '顺丰', color: '#ed6b4d', pale: '#fff0ea', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 状态同步' },
+  { code: 'jd', name: '京东物流', short: '京东', color: '#4a6ff0', pale: '#edf2ff', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'zto', name: '中通快递', short: '中通', color: '#1d9f73', pale: '#e9faf3', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 到站状态' },
+  { code: 'yto', name: '圆通速递', short: '圆通', color: '#f0a334', pale: '#fff6e4', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 到站状态' },
+  { code: 'yunda', name: '韵达快递', short: '韵达', color: '#7659d6', pale: '#f1edff', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 到站状态' },
+  { code: 'sto', name: '申通快递', short: '申通', color: '#ef7c35', pale: '#fff0e7', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 到站状态' },
+  { code: 'jtexpress', name: '极兔速递', short: '极兔', color: '#e95c72', pale: '#fff0f3', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'deppon', name: '德邦快递', short: '德邦', color: '#3193bf', pale: '#eaf7fc', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'ems', name: 'EMS', short: 'EMS', color: '#2b7bb9', pale: '#eaf5fd', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'best', name: '百世快递', short: '百世', color: '#e5a52f', pale: '#fff8e5', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'youshunda', name: '优速快递', short: '优速', color: '#6b61ca', pale: '#f1efff', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'anep', name: '安能物流', short: '安能', color: '#e06e3a', pale: '#fff0e8', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'china_post', name: '中国邮政', short: '邮政', color: '#cf4e4e', pale: '#fff0f0', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { code: 'zjs', name: '宅急送', short: '宅急送', color: '#d96e3e', pale: '#fff1eb', connected: true, synced: '实时', description: '平台直查 · 物流轨迹 · 配送状态' },
+  { name: '菜鸟/其他', short: '更多', color: '#667785', pale: '#eef2f4', connected: false, description: '支持快递100可查询的更多承运商' },
 ]
+
+const selectableProviders = providerList.filter((provider): provider is Provider & { code: string } => Boolean(provider.code))
 
 const nav: Array<{ key: View; label: string; icon: ReactNode }> = [
   { key: 'packages', label: '我的包裹', icon: <House size={18} /> },
@@ -64,7 +78,13 @@ export default function App() {
   const [visible, setVisible] = useState<Record<string, boolean>>({})
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState('尚未查询')
+  const [trackingCarrier, setTrackingCarrier] = useState('')
   const [trackingNumber, setTrackingNumber] = useState('')
+  const [detection, setDetection] = useState<DetectionResult | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  // 用户一旦手动指定过平台，识别结果就不再覆盖它（人工选择优先，避免"改回去"的体验倒退）
+  const [carrierTouched, setCarrierTouched] = useState(false)
+  const detectionSeq = useRef(0)
   const [notice, setNotice] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -91,7 +111,12 @@ export default function App() {
         setEmail(data.user.email)
         setAuthStatus('authenticated')
         void apiRequest<ParcelQueryResponse>('/api/parcels').then(({ response: parcelResponse, data: parcelData }) => {
-          if (active && parcelResponse.ok) setParcels(parcelData?.parcels ?? [])
+          if (!active || !parcelResponse.ok) return
+          const list = parcelData?.parcels ?? []
+          setParcels(list)
+          // 已有包裹时用最新一条的更新时间，避免出现"最后更新于 尚未查询"这种自相矛盾的文案。
+          // 列表按 last_synced_at 倒序返回，取首条即可。
+          if (list.length && list[0].updated) setLastSync(list[0].updated)
         })
       } else if (response.status === 401) {
         setAuthStatus('anonymous')
@@ -134,6 +159,35 @@ export default function App() {
     }
   }, [autoSync, push])
 
+  // 运单号识别：输入停顿 450ms 后才请求，避免把单号逐字符送到服务端。
+  // 识别只用于"预填 + 展示依据"，不参与任何自动重试。
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return
+    const normalized = trackingNumber.trim().replace(/\s/g, '')
+    // 单号太短时不值得请求；清理由 effect 同步到外部（服务端）之外的状态。
+    if (normalized.length < 8) return
+    const seq = ++detectionSeq.current
+    const timer = window.setTimeout(() => {
+      setDetecting(true)
+      void apiRequest<DetectionResponse>('/api/parcels/detect-carrier', { method: 'POST', body: JSON.stringify({ trackingNo: normalized }) })
+        .then(({ response, data }) => {
+          if (seq !== detectionSeq.current) return
+          setDetection(response.ok ? data?.detection ?? null : null)
+        })
+        .catch(() => { if (seq === detectionSeq.current) setDetection(null) })
+        .finally(() => { if (seq === detectionSeq.current) setDetecting(false) })
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [trackingNumber, authStatus])
+
+  // 展示用的识别结果与"生效平台"都在渲染期派生，避免用 effect 回写 state 造成级联渲染。
+  // activeDetection：单号过短时视为无识别结果，防止上一单号的结论残留。
+  const activeDetection = trackingNumber.trim().replace(/\s/g, '').length >= 8 ? detection : null
+  const activeDetecting = trackingNumber.trim().replace(/\s/g, '').length >= 8 ? detecting : false
+  // 生效平台：人工指定优先；否则在未手动指定时用高置信度识别结果兜底。
+  const effectiveCarrier = trackingCarrier
+    || (carrierTouched ? '' : (activeDetection?.best?.confidence === 'high' ? activeDetection.best.carrierCode : ''))
+
   const selected = useMemo(() => parcels.find((item) => item.id === selectedId) ?? null, [parcels, selectedId])
   const connected = new Set(parcels.map((item) => item.carrier)).size
   const waiting = parcels.filter((item) => item.status === '待取件').length
@@ -153,17 +207,25 @@ export default function App() {
     setMobileNav(false)
     setAccountMenuOpen((open) => !open)
   }
-  const queryTrackingNumber = async (trackingValue: string) => {
+  const queryTrackingNumber = async (carrierCode: string, trackingValue: string) => {
     if (syncing) return
+    const normalizedCarrierCode = carrierCode.trim().toLowerCase()
+    // 平台可以由用户手动指定，也可以留空交由服务端按单号识别。
+    if (normalizedCarrierCode && !selectableProviders.some((provider) => provider.code === normalizedCarrierCode)) return toast('请选择快递平台')
     const normalizedTrackingNo = trackingValue.trim().replace(/\s/g, '')
     if (!/^[A-Za-z0-9-]{4,128}$/.test(normalizedTrackingNo)) return toast('请输入正确的快递运单号')
     setSyncing(true)
     try {
-      const { response, data } = await apiRequest<ParcelQueryResponse>('/api/parcels/query-tracking', { method: 'POST', body: JSON.stringify({ trackingNo: normalizedTrackingNo }) })
-      if (!response.ok || !data) return toast(data?.message ?? '运单查询失败，请稍后重试')
+      const { response, data } = await apiRequest<ParcelQueryResponse>('/api/parcels/query-tracking', { method: 'POST', body: JSON.stringify({ ...(normalizedCarrierCode ? { carrierCode: normalizedCarrierCode } : {}), trackingNo: normalizedTrackingNo }) })
+      if (!response.ok || !data) {
+        // 歧义或未能识别时，把候选交给用户确认，绝不静默换平台重试。
+        if (data?.detection) setDetection(data.detection)
+        return toast(data?.message ?? '运单查询失败，请稍后重试')
+      }
       const { response: parcelResponse, data: parcelData } = await apiRequest<ParcelQueryResponse>('/api/parcels')
       if (parcelResponse.ok) setParcels(parcelData?.parcels ?? [])
       setLastSync('刚刚')
+      if (data.detection?.best) setDetection(data.detection)
       toast(data.message ?? '物流信息已更新')
     } catch {
       toast('暂时无法连接物流查询服务，请稍后重试')
@@ -171,7 +233,12 @@ export default function App() {
       setSyncing(false)
     }
   }
-  const sync = () => { void queryTrackingNumber(trackingNumber) }
+  const sync = () => { void queryTrackingNumber(effectiveCarrier, trackingNumber) }
+
+  const chooseCarrier = (carrierCode: string) => {
+    setCarrierTouched(true)
+    setTrackingCarrier(carrierCode)
+  }
 
   const copy = (code: string) => { navigator.clipboard?.writeText(code).then(() => toast(`取件码 ${code} 已复制`)).catch(() => toast('复制失败，请手动记录')) }
   const markParcelPickedUp = (parcelId: string) => {
@@ -368,7 +435,7 @@ export default function App() {
       <main className="main">
         <header className="topbar"><button className="mobile-menu" type="button" aria-label={mobileNav ? '关闭菜单' : '打开菜单'} aria-expanded={mobileNav} aria-controls="primary-navigation" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button><div className="crumb"><span>驿站工作台</span><ChevronRight size={14} /><b>{view === 'packages' ? '我的包裹' : view === 'sources' ? '数据来源' : '账号设置'}</b></div><div className="top-actions" ref={accountAreaRef}><button className="icon-btn dot" type="button" aria-label="查看提醒" onClick={() => toast('暂无新的未读提醒')}><Bell size={18} /></button><button className="account-chip" type="button" aria-haspopup="menu" aria-expanded={accountMenuOpen} aria-label={`打开账号菜单，当前账号 ${maskEmail(user.email)}`} onClick={toggleAccountMenu}><span className="avatar small">{avatarText(user.email)}</span><span>{maskEmail(user.email)}</span><ChevronRight size={14} /></button>{accountMenuOpen && <div className="account-menu" role="menu"><div className="account-menu-user"><span className="avatar small">{avatarText(user.email)}</span><div><b>{maskEmail(user.email)}</b><small>当前登录账号</small></div></div><button type="button" role="menuitem" onClick={openAccountSettings}><Settings2 size={15} />账号设置<ChevronRight size={14} /></button><button type="button" role="menuitem" onClick={() => void logout()}><LogOut size={15} />退出当前账号</button></div>}</div></header>
         <div className="content">
-          {view === 'packages' && <Packages parcels={parcels} filtered={filtered} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} trackingNumber={trackingNumber} setTrackingNumber={setTrackingNumber} waiting={waiting} transit={transit} connected={connected} syncing={syncing} lastSync={lastSync} onSync={sync} onViewSources={() => { setView('sources'); setAccountMenuOpen(false) }} visible={visible} setVisible={setVisible} onOpen={setSelectedId} onCopy={copy} onConfirm={confirm} confirmingId={confirmingId} />}
+          {view === 'packages' && <Packages parcels={parcels} filtered={filtered} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} effectiveCarrier={effectiveCarrier} trackingNumber={trackingNumber} setTrackingNumber={setTrackingNumber} detection={activeDetection} detecting={activeDetecting} onChooseCarrier={chooseCarrier} waiting={waiting} transit={transit} connected={connected} syncing={syncing} lastSync={lastSync} onSync={sync} onViewSources={() => { setView('sources'); setAccountMenuOpen(false) }} visible={visible} setVisible={setVisible} onOpen={setSelectedId} onCopy={copy} onConfirm={confirm} confirmingId={confirmingId} />}
           {view === 'sources' && <Sources connected={connected} onExplain={toast} />}
           {view === 'settings' && <Settings email={user.email} passwordSet={Boolean(user.passwordSet)} autoSync={autoSync} push={push} setAutoSync={setAutoSync} setPush={setPush} onPreferenceSaved={() => toast('偏好设置已保存到本设备')} onLogout={logout} onSetPassword={() => setPasswordSetupOpen(true)} />}
         </div>
@@ -388,22 +455,71 @@ function Header({ kicker, title, text, action }: { kicker: ReactNode; title: Rea
   return <section className="heading"><div><div className="eyebrow">{kicker}</div><h1>{title}</h1><p>{text}</p></div>{action}</section>
 }
 
-function Packages({ parcels, filtered, filter, setFilter, query, setQuery, trackingNumber, setTrackingNumber, waiting, transit, connected, syncing, lastSync, onSync, onViewSources, visible, setVisible, onOpen, onCopy, onConfirm, confirmingId }: { parcels: Parcel[]; filtered: Parcel[]; filter: Filter; setFilter: (value: Filter) => void; query: string; setQuery: (value: string) => void; trackingNumber: string; setTrackingNumber: (value: string) => void; waiting: number; transit: number; connected: number; syncing: boolean; lastSync: string; onSync: () => void; onViewSources: () => void; visible: Record<string, boolean>; setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; onOpen: (id: string) => void; onCopy: (code: string) => void; onConfirm: (parcel: Parcel) => void | Promise<void>; confirmingId: string | null }) {
+const CONFIDENCE_TEXT: Record<DetectionConfidence, string> = { high: '置信度高', medium: '置信度中', low: '置信度低' }
+
+/**
+ * 识别结果提示。设计原则：
+ * - 只展示结论与依据，不改变用户已做的选择；
+ * - 置信度不足时给出候选按钮，由用户确认，绝不自动替用户决定；
+ * - 识别失败不阻断手动选平台后查询。
+ */
+function DetectionHint({ detection, detecting, effectiveCarrier, onChooseCarrier }: { detection: DetectionResult | null; detecting: boolean; effectiveCarrier: string; onChooseCarrier: (carrierCode: string) => void }) {
+  if (detecting) return <div className="detect-hint detecting"><RefreshCw size={14} className="spin" />正在按公开单号规则识别快递平台…</div>
+  if (!detection) return null
+
+  const decided = Boolean(detection.best) && detection.best?.confidence === 'high'
+  if (decided && detection.best) {
+    const candidate = detection.best
+    return <div className="detect-hint ok" style={cssVars(providerColor(candidate.carrierCode), providerPale(candidate.carrierCode))}>
+      <div className="detect-head"><CircleCheck size={15} /><b>已识别为 {candidate.carrierName}</b><small>{CONFIDENCE_TEXT[candidate.confidence]}</small></div>
+      <ul className="detect-evidence">{candidate.evidence.filter((evidence) => evidence.type !== 'source').map((evidence, index) => <li key={`${evidence.type}-${index}`}><span>{EVIDENCE_LABEL[evidence.type] ?? evidence.type}</span>{evidence.note}</li>)}</ul>
+    </div>
+  }
+
+  if (detection.candidates.length) {
+    return <div className="detect-hint ambiguous">
+      <div className="detect-head"><CircleAlert size={15} /><b>该运单号可能属于多个平台</b><small>纯数字单号无法唯一判定，请确认后查询</small></div>
+      <div className="detect-candidates">{detection.candidates.slice(0, 6).map((candidate) => <button key={candidate.carrierCode} type="button" className={effectiveCarrier === candidate.carrierCode ? 'active' : ''} style={cssVars(providerColor(candidate.carrierCode), providerPale(candidate.carrierCode))} onClick={() => onChooseCarrier(candidate.carrierCode)}><i />{candidate.carrierName}<em>{CONFIDENCE_TEXT[candidate.confidence]}</em></button>)}</div>
+      <ul className="detect-evidence">{detection.candidates[0].evidence.filter((evidence) => evidence.type === 'length' || evidence.type === 'prefix').slice(0, 2).map((evidence, index) => <li key={`${evidence.type}-${index}`}><span>{EVIDENCE_LABEL[evidence.type] ?? evidence.type}</span>{evidence.note}</li>)}</ul>
+    </div>
+  }
+
+  return <div className="detect-hint failed">
+    <CircleAlert size={15} />
+    <div><b>未能识别该运单号所属平台</b><small>{detection.unmatchedReason === 'invalid_format' || detection.unmatchedReason === 'too_short' ? '请检查运单号是否输入完整' : '请在上方手动选择快递平台后再查询'}</small></div>
+  </div>
+}
+
+const EVIDENCE_LABEL: Record<string, string> = { prefix: '前缀', length: '长度', charset: '字符集', suffix: '后缀', pattern: '规则', source: '来源' }
+
+function providerColor(carrierCode: string): string {
+  return selectableProviders.find((provider) => provider.code === carrierCode)?.color ?? '#177c73'
+}
+
+function providerPale(carrierCode: string): string {
+  return selectableProviders.find((provider) => provider.code === carrierCode)?.pale ?? '#e9faf3'
+}
+
+function Packages({ parcels, filtered, filter, setFilter, query, setQuery, effectiveCarrier, trackingNumber, setTrackingNumber, detection, detecting, onChooseCarrier, waiting, transit, connected, syncing, lastSync, onSync, onViewSources, visible, setVisible, onOpen, onCopy, onConfirm, confirmingId }: { parcels: Parcel[]; filtered: Parcel[]; filter: Filter; setFilter: (value: Filter) => void; query: string; setQuery: (value: string) => void; effectiveCarrier: string; trackingNumber: string; setTrackingNumber: (value: string) => void; detection: DetectionResult | null; detecting: boolean; onChooseCarrier: (carrierCode: string) => void; waiting: number; transit: number; connected: number; syncing: boolean; lastSync: string; onSync: () => void; onViewSources: () => void; visible: Record<string, boolean>; setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; onOpen: (id: string) => void; onCopy: (code: string) => void; onConfirm: (parcel: Parcel) => void | Promise<void>; confirmingId: string | null }) {
   const trackingInputRef = useRef<HTMLInputElement>(null)
   const hasParcels = parcels.length > 0
 
   return <>
-    <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹，最后更新于 ${lastSync}。` : '输入快递运单号，自动识别承运商后查询并保存物流状态。'} action={<button className={`sync-btn ${syncing ? 'syncing' : ''}`} onClick={onSync} disabled={syncing || !trackingNumber.trim()}><RefreshCw size={17} />{syncing ? '查询中…' : hasParcels ? '更新物流' : '查询快递'}</button>} />
+    <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹${lastSync && lastSync !== '尚未查询' ? `，最后更新于 ${lastSync}` : ''}。` : '输入快递运单号，自动识别快递平台后查询并保存物流状态。'} />
     <form className="tracking-query" onSubmit={(event) => { event.preventDefault(); onSync() }}>
-      <div><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>手动输入或粘贴运单号；系统会自动识别快递公司，仅保存到当前登录账号的物流记录。</small></label></div>
-      <input id="parcel-tracking" ref={trackingInputRef} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value.replace(/\s/g, '').slice(0, 128))} autoComplete="off" placeholder="请输入快递运单号" maxLength={128} />
-      <button type="submit" disabled={syncing}>{syncing ? '查询中…' : '查询快递'}</button>
+      <div className="tracking-query-meta"><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>输入或粘贴运单号，系统按公开单号规则识别快递平台；结果仅保存到当前登录账号。</small></label></div>
+      <div className="tracking-query-fields">
+        <label className="tracking-field" htmlFor="parcel-tracking"><span>快递运单号</span><input id="parcel-tracking" ref={trackingInputRef} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value.replace(/\s/g, '').slice(0, 128))} autoComplete="off" placeholder="请输入快递运单号" maxLength={128} required /></label>
+        <label className="tracking-field" htmlFor="parcel-carrier"><span>快递平台<em className="optional-tag">选填</em></span><select id="parcel-carrier" value={effectiveCarrier} onChange={(event) => onChooseCarrier(event.target.value)}><option value="">不填，自动识别</option>{selectableProviders.map((provider) => <option key={provider.code} value={provider.code}>{provider.name}</option>)}</select></label>
+      </div>
+      <button type="submit" disabled={syncing || !trackingNumber.trim()}>{syncing ? '查询中…' : '查询快递'}</button>
+      <DetectionHint detection={detection} detecting={detecting} effectiveCarrier={effectiveCarrier} onChooseCarrier={onChooseCarrier} />
     </form>
-    <section className="summary"><div className="hero"><div className="orb one" /><div className="orb two" /><div className="hero-copy"><div className="hero-kicker"><i /> 查询记录已保存</div><h2>{waiting ? `有 ${waiting} 个包裹，正在等你取件` : hasParcels ? '当前没有待取件包裹' : '从第一个运单号开始'}</h2><p>{waiting ? '取件码只会在你的账号内展示，确认取件后会自动删除。' : hasParcels ? '输入新的运单号即可继续添加包裹。' : '查询结果会保存到当前账号，方便你下次继续查看。'}</p><div className="stats"><div><b>{waiting}</b><span>待取件</span></div><div><b>{transit}</b><span>运输中</span></div><div><b>{connected}</b><span>已查询承运商</span></div></div></div><div className="hero-art"><div><Package size={29} /><small>包裹状态</small><b>查询后保存</b></div><span><Check size={14} /></span></div></div><div className="trust"><div className="trust-title"><span><ShieldCheck size={19} /></span>安心提示</div><h3>你的数据，只为你服务</h3><p>运单号仅用于服务端查询并关联当前登录账号；取件码仅在服务商明确返回时展示，不会出现在推送通知里。</p><footer><span><LockKeyhole size={14} /> 加密存储</span><span><Zap size={14} /> 确认后清理</span></footer></div></section>
-    <div className="section-head"><div><h2>包裹列表</h2><span>{filtered.length} 个结果</span></div><div className="section-tools"><label className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索平台、包裹或单号" /></label><span className="sync-label"><Zap size={15} /> 查询后自动保存</span></div></div>
-    <div className="tabs">{(['全部', '待取件', '运输中', '已完成'] as Filter[]).map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}{item !== '全部' && <em>{parcels.filter((parcel) => parcel.status === item).length}</em>}</button>)}</div>
-    {!hasParcels ? <div className="empty empty-first"><Package size={24} /><strong>还没有包裹记录</strong><span>输入一个运单号，开始查询并保存物流信息。</span><button className="empty-action" type="button" onClick={() => trackingInputRef.current?.focus()}>查询第一个包裹 <ChevronRight size={14} /></button></div> : filtered.length ? <div className="parcel-grid">{filtered.map((parcel) => <Card key={parcel.id} parcel={parcel} shown={Boolean(visible[parcel.id])} toggle={() => setVisible((items) => ({ ...items, [parcel.id]: !items[parcel.id] }))} onOpen={() => onOpen(parcel.id)} onCopy={onCopy} onConfirm={onConfirm} confirming={confirmingId === parcel.id} />)}</div> : <div className="empty"><Search size={24} /><strong>没有找到匹配的包裹</strong><span>试试搜索其他平台、包裹名称或运单号。</span></div>}
-    <div className="integration"><div className="integration-icon"><CircleAlert size={18} /></div><div><strong>查询说明</strong><p>输入运单号后，系统会自动识别承运商，查询真实物流并保存到当前账号。取件码仅在上游明确返回时展示，不会根据运单号猜测。</p></div><button onClick={onViewSources}>查看查询方式 <ArrowUpRight size={15} /></button></div>
+    {hasParcels && <section className="summary"><div className="hero"><div className="orb one" /><div className="orb two" /><div className="hero-copy"><div className="hero-kicker"><i /> 查询记录已保存</div><h2>{waiting ? `有 ${waiting} 个包裹，正在等你取件` : hasParcels ? '当前没有待取件包裹' : '从第一个运单号开始'}</h2><p>{waiting ? '取件码只会在你的账号内展示，确认取件后会自动删除。' : hasParcels ? '输入新的运单号即可继续添加包裹。' : '查询结果会保存到当前账号，方便你下次继续查看。'}</p><div className="stats"><div><b>{waiting}</b><span>待取件</span></div><div><b>{transit}</b><span>运输中</span></div><div><b>{connected}</b><span>已查询承运商</span></div></div></div><div className="hero-art"><div><Package size={29} /><small>包裹状态</small><b>查询后保存</b></div><span><Check size={14} /></span></div></div><div className="trust"><div className="trust-title"><span><ShieldCheck size={19} /></span>安心提示</div><h3>你的数据，只为你服务</h3><p>运单号仅用于服务端查询并关联当前登录账号；取件码仅在服务商明确返回时展示，不会出现在推送通知里。</p><footer><span><LockKeyhole size={14} /> 加密存储</span><span><Zap size={14} /> 确认后清理</span></footer></div></section>}
+    {hasParcels && <div className="section-head"><div><h2>包裹列表</h2><span>{filtered.length} 个结果</span></div><div className="section-tools"><label className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索平台、包裹或单号" /></label><span className="sync-label"><Zap size={15} /> 查询后自动保存</span></div></div>}
+    {hasParcels && <div className="tabs">{(['全部', '待取件', '运输中', '已完成'] as Filter[]).map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}{item !== '全部' && <em>{parcels.filter((parcel) => parcel.status === item).length}</em>}</button>)}</div>}
+    {!hasParcels ? <div className="empty empty-first"><Package size={24} /><strong>还没有包裹记录</strong><span>输入快递运单号，系统会识别快递平台并保存物流信息。</span><button className="empty-action" type="button" onClick={() => trackingInputRef.current?.focus()}>查询第一个包裹 <ChevronRight size={14} /></button></div> : filtered.length ? <div className="parcel-grid">{filtered.map((parcel) => <Card key={parcel.id} parcel={parcel} shown={Boolean(visible[parcel.id])} toggle={() => setVisible((items) => ({ ...items, [parcel.id]: !items[parcel.id] }))} onOpen={() => onOpen(parcel.id)} onCopy={onCopy} onConfirm={onConfirm} confirming={confirmingId === parcel.id} />)}</div> : <div className="empty"><Search size={24} /><strong>没有找到匹配的包裹</strong><span>试试搜索其他平台、包裹名称或运单号。</span></div>}
+    <div className="integration"><div className="integration-icon"><CircleAlert size={18} /></div><div><strong>查询说明</strong><p>输入运单号后，系统按公开单号规则识别快递平台并查询真实物流；纯数字单号可能对应多个平台，此时会请你确认。取件码仅在上游明确返回时展示，不会根据运单号猜测。</p></div><button onClick={onViewSources}>查看查询方式 <ArrowUpRight size={15} /></button></div>
   </>
 }
 
@@ -414,7 +530,7 @@ function Card({ parcel, shown, toggle, onOpen, onCopy, onConfirm, confirming }: 
 
 function Pill({ status }: { status: Status }) { return <span className={`pill ${status === '待取件' ? 'wait' : status === '运输中' ? 'transit' : 'done'}`}>{status === '待取件' ? <PackageCheck size={13} /> : status === '运输中' ? <Truck size={13} /> : <Check size={13} />}{status}</span> }
 function Sources({ connected, onExplain }: { connected: number; onExplain: (message: string) => void }) {
-  return <><Header kicker={<><Link2 size={14} /> 查询方式</>} title={<>数据来源，<span>清楚可见。</span></>} text={`已查询 ${connected} 个承运商；输入运单号后会自动识别并保存物流记录。`} action={<button className="outline-btn" onClick={() => onExplain('输入运单号后，驿见会自动识别承运商并查询物流；当前不需要单独绑定快递账号。')}><Clipboard size={16} /> 查询说明</button>} /><section className="source-banner"><div className="source-icon"><ShieldCheck size={24} /></div><div><strong>不通过邮箱地址猜测你的包裹</strong><p>只有你手动提交运单号后，系统才会查询并保存对应物流记录。</p></div><span className="secure"><i /> 服务端查询</span></section><div className="section-head"><div><h2>支持识别的承运商</h2><span>查询时会自动判断快递公司</span></div><div className="source-count"><b>{connected}</b><span>个已查询</span></div></div><div className="provider-grid">{providerList.map((provider) => <article className="provider" key={provider.name} style={cssVars(provider.color, provider.pale)}><div className="provider-top"><span>{provider.short.slice(0, 1)}</span>{provider.connected ? <b><CircleCheck size={14} /> 可识别</b> : <small>按单号识别</small>}</div><h3>{provider.name}</h3><p>{provider.description.replace('自动识别', '单号识别').replace('状态同步', '状态保存')}</p>{provider.connected ? <footer><span><RefreshCw size={13} /> 支持查询</span><button onClick={() => onExplain(`${provider.name}会在你提交运单号后自动识别，不需要单独授权。`)}>查看说明 <ChevronRight size={14} /></button></footer> : <button className="connect" onClick={() => onExplain(`${provider.name}会在你提交运单号后参与识别，具体支持范围以快递100返回结果为准。`)}><Link2 size={15} /> 查看支持范围</button>}</article>)}</div><section className="how"><div className="section-head"><div><h2>查询流程</h2><span>输入一个运单号即可开始</span></div></div><div className="steps"><Step no="01" icon={<Package size={18} />} title="输入运单号" text="提交你要查询的快递运单号。" /><Step no="02" icon={<Search size={18} />} title="自动识别承运商" text="服务端识别快递公司并查询真实轨迹。" /><Step no="03" icon={<PackageCheck size={18} />} title="保存到我的包裹" text="查询结果保存到当前账号，方便下次继续查看。" /></div></section></>
+  return <><Header kicker={<><Link2 size={14} /> 查询方式</>} title={<>数据来源，<span>清楚可见。</span></>} text={'已查询 ' + connected + ' 个承运商；输入运单号后按公开规则识别平台，再查询并保存物流记录。'} action={<button className="outline-btn" onClick={() => onExplain('输入运单号后，驿见会按公开单号规则识别快递平台并查询物流；识别依据会展示在查询框下方，当前不需要单独绑定快递账号。')}><Clipboard size={16} /> 查询说明</button>} /><section className="source-banner"><div className="source-icon"><ShieldCheck size={24} /></div><div><strong>识别只做建议，不替你做决定</strong><p>纯数字单号在多家公司之间真实重叠，此时系统会列出候选由你确认，绝不静默切换平台重试，也不通过邮箱地址猜测你的包裹。</p></div><span className="secure"><i /> 服务端查询</span></section><div className="section-head"><div><h2>支持识别与查询的快递平台</h2><span>识别依据为公开单号规则</span></div><div className="source-count"><b>{connected}</b><span>个已查询</span></div></div><div className="provider-grid">{providerList.map((provider) => <article className="provider" key={provider.name} style={cssVars(provider.color, provider.pale)}><div className="provider-top"><span>{provider.short.slice(0, 1)}</span>{provider.connected ? <b><CircleCheck size={14} /> 可查询</b> : <small>暂不可直查</small>}</div><h3>{provider.name}</h3><p>{provider.description}</p>{provider.connected ? <footer><span><RefreshCw size={13} /> 支持查询</span><button onClick={() => onExplain(provider.name + '会根据公开单号规则参与识别，并按识别或你指定的平台编码查询，不需要单独授权。')}>查看说明 <ChevronRight size={14} /></button></footer> : <button className="connect" onClick={() => onExplain(provider.name + '需要先确认快递100是否提供对应平台编码，具体支持范围以快递100返回结果为准。')}><Link2 size={15} /> 查看支持范围</button>}</article>)}</div><section className="how"><div className="section-head"><div><h2>查询流程</h2><span>输入一个运单号即可开始</span></div></div><div className="steps"><Step no="01" icon={<Package size={18} />} title="输入运单号" text="输入或粘贴快递运单号，支持带空格与连字符。" /><Step no="02" icon={<Search size={18} />} title="识别快递平台" text="按前缀、长度、号段等公开规则给出结论与依据；歧义时列候选由你确认。" /><Step no="03" icon={<PackageCheck size={18} />} title="保存到我的包裹" text="查询结果保存到当前账号，方便下次继续查看。" /></div></section></>
 }
 function Step({ no, icon, title, text }: { no: string; icon: ReactNode; title: string; text: string }) { return <div className="step"><small>{no}</small><div>{icon}</div><strong>{title}</strong><p>{text}</p></div> }
 
