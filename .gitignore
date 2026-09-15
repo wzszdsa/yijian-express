@@ -48,3 +48,6 @@ server-data
 # Local deployment bundles
 output/*.tgz
 output/*.b64
+
+# 本地助手工作记录（非项目代码）
+.workbuddy-ai/

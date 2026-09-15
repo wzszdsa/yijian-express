@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "build:server": "tsc -p tsconfig.server.json",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
+    "detect:check": "npm run build:server && node scripts/check-carrier-detect.mjs",
+    "fix:status-detail": "node scripts/fix-status-detail.mjs",
+    "migrate:rds": "node scripts/migrate-to-rds.mjs",
     "start": "node server-dist/index.mjs",
     "dev:server": "npm run build:server && node server-dist/index.mjs"
   },
