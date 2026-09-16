@@ -1,5 +1,15 @@
 # 部署到中国香港 ECS（免 ICP 备案）
 
+> **实施状态（2026-09-16）：部署已完成并全链路验证通过。**
+> 实例 `i-j6c06mdtwktzobo4vaxc`（`47.76.244.209`，`cn-hongkong`）上已完成：依赖安装、建库建账号、
+> 代码部署与构建、建表、systemd、Nginx 反代、Let's Encrypt 证书签发、443 配置、数据迁移、APK 打包。
+>
+> 验证结果：`https://wzzsl.fun/` 返回 200，`/api/health` 正确回报 `storage: mysql`，
+> `http://` 自动 301 跳转 HTTPS，外部第三方抓取可正常读到首页；RDS 与本地 MariaDB 数据行数完全一致。
+> 证书有效期至 **2026-12-15**，由 acme.sh 自动续期。
+>
+> 实测细节与踩坑记录见 `.workbuddy-ai/memory/2026-09-16.md`。
+
 ## 为什么是香港节点
 
 ICP 备案约束的是**服务器接入环节**：域名解析到中国大陆节点时，未备案会被接入商阻断，80 与 443 端口同样受限。中国香港不属于工信部备案管辖范围，因此**域名无需备案即可正常解析访问**。
@@ -48,12 +58,28 @@ App / 浏览器
 
 ## 前置条件
 
-- 一台阿里云**中国香港**地域的 ECS——本次实例为 `i-j6c1mia0do3v8whfjwgc`，公网 IP **`8.218.90.3`**（已验证归属中国香港九龙，AS45102）
+- 一台阿里云**中国香港**地域的 ECS——本次实例为 `i-j6c06mdtwktzobo4vaxc`，公网 IP **`47.76.244.209`**
+  （地域经实例元数据服务权威确认：`curl http://100.100.100.200/latest/meta-data/region-id` → `cn-hongkong`）
   > 注意：ECS 地域购买后不可更改，无法把大陆实例「改」成香港
 - 域名 `wzzsl.fun` 的解析管理权限
 - 服务器安全组放行 **80** 与 **443**（3300 与 3000 不需要对外，走本机回环）
 
-下文命令以 **Alibaba Cloud Linux 3 / CentOS 系**（`dnf`）为例，Ubuntu 请把 `dnf` 换成 `apt`。
+### 实际环境（2026-09-15 实测，非推断）
+
+| 项 | 实际值 |
+|---|---|
+| 操作系统 | **Alibaba Cloud Linux 4.0.6**（`ID=alinux`，包管理器 **`dnf`**） |
+| 架构 | x86_64 |
+| 资源 | 2 vCPU / 1670 MB 内存 / **4095 MB swap** / 根盘 40 G（30 G 可用） |
+| 部署前已装组件 | **Node / npm / git / Nginx / MySQL 全部缺失**，需从零安装 |
+| 系统防火墙 | firewalld `active`，已放行 `22/80/443/8888/21027/39000-40000` |
+| SELinux | `Disabled` |
+| 其他 | 机器上已装**宝塔面板**（无 nginx/mysql/php、无站点），本次**保留不动**，走手动部署 |
+
+下文命令以本次实际环境为准。
+
+> **不要用 SSH banner 的 OpenSSH 版本反推发行版。** Alinux 4 搭载 OpenSSH 9.6，与 Ubuntu 24.04 相同，曾据此误判为 Ubuntu。
+> Ubuntu / Debian 系把 `dnf install -y` 换成 `apt install -y` 即可，但 **`certbot` / `socat` 在 Alinux 源中不可用**，证书须用 **acme.sh + webroot 模式**。
 
 ---
 
@@ -208,7 +234,7 @@ UNION ALL SELECT 'events', COUNT(*) FROM yijian_parcel_events;
 
 ## 9. 域名解析切换
 
-在 DNSPod 把 `wzzsl.fun` 的 A 记录从 `47.122.112.1` 改为 **`8.218.90.3`**（香港 ECS 公网 IP），并删除旧记录。
+在 DNSPod 把 `wzzsl.fun` 的 A 记录从 `47.122.112.1` 改为 **`47.76.244.209`**（香港 ECS 公网 IP），并删除旧记录。
 
 验证解析已生效：
 
