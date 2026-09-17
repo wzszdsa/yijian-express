@@ -578,7 +578,7 @@ function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, s
   const listVisible = parcelsReady && hasParcels
 
   return <>
-    <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹${lastSync && lastSync !== '尚未查询' ? `，最后更新于 ${lastSync}` : ''}。` : '输入快递运单号，自动识别快递平台后查询并保存物流状态。'} />
+    <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹${lastSync && lastSync !== '尚未查询' ? `，最后更新于 ${lastSync}` : ''}。` : '查询结果会保存到你的账号，下次打开或换设备登录都能接着看。'} />
     <form className="tracking-query" onSubmit={(event) => { event.preventDefault(); onSync() }}>
       <div className="tracking-query-meta"><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>输入或粘贴运单号，系统按公开单号规则识别快递平台；结果仅保存到当前登录账号。</small></label></div>
       <div className="tracking-query-fields">
