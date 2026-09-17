@@ -198,7 +198,9 @@ npm run build && systemctl restart yijian && rm -f /root/update.bundle
 
 > 部署后请核对三件事：**服务器产物哈希与本地构建一致**、`/api/health` 正常、新接口按预期响应。若只推送了 GitHub 而没在服务器拉取，线上不会有任何变化。
 
-> **历史方案**：`deploy/aliyun/` 记录的是中国大陆轻量服务器（`47.122.112.1`）的部署方式。因域名未备案，该路径下 80/443 会被接入商阻断，已不适用。当前代码部署不依赖 Netlify Functions。
+> **历史方案**：`deploy/aliyun/` 记录的是中国大陆轻量服务器（`47.122.112.1`）的部署方式。因域名未备案，该路径下 80/443 会被接入商阻断，已不适用。
+>
+> **Netlify 已弃用**（2026-09-17）：`netlify.toml`、`tsconfig.functions.json` 与 Netlify Functions 相关配置已移除；此前 Netlify 侧使用的 Supabase 存储也早已被自建 MariaDB 取代。当前唯一的部署形态是「中国香港 ECS + Nginx + systemd + MariaDB」，手机端走 Capacitor 远程加载。
 
 ## 运单号查快递（快递100）
 
@@ -306,17 +308,26 @@ npm run detect:check
 
 ## 构建 Android Debug APK
 
+**当前为远程加载模式**：`capacitor.config.ts` 设置 `server.url = https://wzzsl.fun`，APK 内**不打包前端资源**，打开即加载线上站点。这样每次部署网页后 App 界面同步更新，无需重新打包分发。
+
 ```powershell
 cd D:\codex\purchase
 npm run build
 npx cap sync android
 cd android
+$env:JAVA_HOME="C:\Program Files\Microsoft\jdk-21.0.12.1-hotspot"   # 未设置时 Gradle 会直接失败
 .\gradlew.bat assembleDebug --no-daemon
 ```
 
-APK 输出：
+APK 输出：`D:\codex\purchase\yijian-debug.apk`
 
-`D:\codex\purchase\yijian-debug.apk`
+已知环境问题（Windows 本机）：
+
+- **必须显式设置 `JAVA_HOME`**，否则 Gradle 报找不到 Java。
+- 若 `npx cap sync` 或 Gradle 卡住并报 `genie-trash ETIMEDOUT`，是沙箱的「安全删除」垫片拦截所致，命令前加 `CODEBUDDY_SAFE_DELETE_ENABLED=0`。
+- `dl.google.com` 在本机被阻断，Android SDK 需走腾讯镜像；`sdkmanager` 不支持自定义源，需手动布局目录。
+
+**远程加载模式的取舍**：App 的可用性等同于域名可达性，且没有离线降级空间。由于本应用的数据（登录态、包裹、轨迹）本就全部来自服务端，离线场景下即使把资源打进 APK 也无法使用，因此远程加载在当前形态下是合理选择；若日后需要「秒开」或独立于站点的分发，再切换为 `webDir` 内置资源（同时需通过 `VITE_API_BASE_URL` 指向接口地址）。
 
 ## 界面走查记录（首次使用路径）
 

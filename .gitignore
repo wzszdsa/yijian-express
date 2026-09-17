@@ -29,11 +29,9 @@ android/build
 android/app/build
 yijian-debug.apk
 
-.netlify-local-data
 
 
 # Local Netlify folder
-.netlify
 
 .env
 .env.*
