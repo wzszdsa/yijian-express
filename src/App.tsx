@@ -580,7 +580,7 @@ function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, s
   return <>
     <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹${lastSync && lastSync !== '尚未查询' ? `，最后更新于 ${lastSync}` : ''}。` : '查询结果会保存到你的账号，下次打开或换设备登录都能接着看。'} />
     <form className="tracking-query" onSubmit={(event) => { event.preventDefault(); onSync() }}>
-      <div className="tracking-query-meta"><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>输入或粘贴运单号，系统按公开单号规则识别快递平台；结果仅保存到当前登录账号。</small></label></div>
+      <div className="tracking-query-meta"><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>粘贴或输入单号，自动识别快递平台；结果只保存到当前账号。</small></label></div>
       <div className="tracking-query-fields">
         <label className="tracking-field" htmlFor="parcel-tracking"><span>快递运单号</span><input id="parcel-tracking" ref={trackingInputRef} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value.replace(/\s/g, '').slice(0, 128))} autoComplete="off" placeholder="请输入快递运单号" maxLength={128} required /></label>
         <label className="tracking-field" htmlFor="parcel-carrier"><span>快递平台<em className="optional-tag">选填</em></span><select id="parcel-carrier" value={effectiveCarrier} onChange={(event) => onChooseCarrier(event.target.value)}><option value="">不填，自动识别</option>{selectableProviders.map((provider) => <option key={provider.code} value={provider.code}>{provider.name}</option>)}</select></label>
@@ -768,18 +768,75 @@ function Drawer({ parcel, shown, toggle, onCopy, onClose, onConfirm, confirming 
   return <div className="drawer-layer" onClick={onClose}><aside className="drawer" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="drawer-title" onClick={(event) => event.stopPropagation()}><div className="drawer-head"><div><small>包裹详情</small><h2 id="drawer-title">{parcel.title}</h2></div><button className="icon-btn" type="button" aria-label="关闭包裹详情" onClick={onClose}><X size={18} /></button></div><div className="drawer-carrier"><span className="carrier" style={cssVars(parcel.color, parcel.pale)}><Truck size={19} /></span><div><b>{parcel.carrier}</b><small>{parcel.tracking}</small></div><Pill status={parcel.status} /></div>{parcel.code ? <div className="drawer-code"><div><span>取件码</span><small>{parcel.spot}</small></div><strong>{shown ? parcel.code : '•••-•••'}</strong><button type="button" className={`icon-ghost ${shown ? 'on' : ''}`} aria-pressed={shown} aria-label={shown ? '隐藏取件码' : '显示取件码'} title={shown ? '隐藏取件码' : '显示取件码'} onClick={toggle}>{shown ? <EyeOff size={16} /> : <Eye size={16} />}</button>{shown && <button type="button" className="icon-ghost" aria-label="复制取件码" title="复制取件码" onClick={() => onCopy(parcel.code ?? '')}><Copy size={16} /></button>}</div> : <div className="drawer-status"><span><Truck size={18} /></span><div><b>{parcel.eta}</b><small>{parcel.location}</small></div></div>}<TrailMap events={parcel.events} /><div className="timeline"><header><b>文字轨迹</b><small>{parcel.events.length} 条记录</small></header>{parcel.events.map((event, index) => <div className={`event ${event.active ? 'active' : ''}`} key={`${event.time}-${index}`}><i /><div><div><b>{event.title}</b><time>{event.time}</time></div><p>{event.text}</p></div></div>)}</div>{parcel.code && <button className="drawer-confirm" type="button" disabled={confirming} onClick={() => void onConfirm(parcel)}><Check size={16} /> {confirming ? '保存中…' : '我已取件，删除取件码'}</button>}<div className="drawer-note"><ShieldCheck size={15} />取件码只在你的账号内展示；确认取件后立即从系统删除。</div></aside></div>
 }
 
+/** 两点球面距离（km），用于给示意图标注真实尺度，避免用户误读放大后的路线。 */
+function geoDistance(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const toRad = (value: number) => (value * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+/**
+ * 地图轨迹。坐标来自快递100 的 areaCenter（resultv2=4），是**行政区域中心点**而非实时 GPS，
+ * 因此这里只做等距示意：按真实经纬度比例缩放（含 cos(纬度) 修正），既不拉长也不压扁路线；
+ * 不绘制任何国界、海域或争议区域，只画点位与连线，规避地图数据合规风险。
+ */
 function TrailMap({ events }: { events: Event[] }) {
-  const points = events.filter((event) => Number.isFinite(event.lat) && Number.isFinite(event.lng)) as Array<Event & { lat: number; lng: number }>
+  const located = events.filter((event) => Number.isFinite(event.lat) && Number.isFinite(event.lng)) as Array<Event & { lat: number; lng: number }>
+  // 相邻重复坐标（同一行政区的多条轨迹）会叠成同一个点，先去重再绘制
+  const points = located.filter((point, index) => index === 0 || point.lat !== located[index - 1].lat || point.lng !== located[index - 1].lng)
+
   if (points.length < 2) {
-    return <section className="trail-map trail-map-empty"><header><div><MapPin size={16} /><b>地图轨迹</b></div><small>服务商未返回足够的坐标点</small></header><div className="trail-map-placeholder"><MapPin size={24} /><span>已保留完整文字轨迹</span><small>当前接口只返回文字位置；接入带经纬度的承运商数据后，地图会自动显示路线。</small></div></section>
+    return <section className="trail-map trail-map-empty"><header><div><MapPin size={16} /><b>地图轨迹</b></div><small>承运商未返回坐标</small></header><div className="trail-map-placeholder"><MapPin size={24} /><span>已保留完整文字轨迹</span><small>该单号暂未返回经纬度。承运商提供坐标后，这里会自动显示路线。</small></div></section>
   }
-  const lngs = points.map((point) => point.lng)
+
+  const W = 320
+  const H = 186
+  const PAD = 34
   const lats = points.map((point) => point.lat)
-  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs); const minLat = Math.min(...lats); const maxLat = Math.max(...lats)
-  const x = (lng: number) => 18 + ((lng - minLng) / Math.max(maxLng - minLng, 0.01)) * 264
-  const y = (lat: number) => 154 - ((lat - minLat) / Math.max(maxLat - minLat, 0.01)) * 118
-  const path = points.map((point) => `${x(point.lng)},${y(point.lat)}`).join(' ')
-  return <section className="trail-map"><header><div><MapPin size={16} /><b>地图轨迹</b></div><small>{points.length} 个坐标点 · 非比例底图</small></header><div className="trail-map-canvas"><svg viewBox="0 0 300 174" role="img" aria-label="快递地图轨迹"><defs><linearGradient id="trail-bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#eef7f5" /><stop offset="1" stopColor="#e8f0fb" /></linearGradient></defs><rect width="300" height="174" rx="14" fill="url(#trail-bg)" /><path d="M-10 125 C48 92 64 145 112 114 S184 60 236 86 S296 45 320 54" fill="none" stroke="#d1e2e5" strokeWidth="18" strokeLinecap="round" /><path d="M8 30 C74 52 86 12 146 42 S232 137 310 117" fill="none" stroke="#dce8e8" strokeWidth="9" strokeLinecap="round" /><polyline points={path} fill="none" stroke="#177c73" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />{points.map((point, index) => <g key={`${point.time}-${index}`}><circle cx={x(point.lng)} cy={y(point.lat)} r={index === 0 ? 6 : 4.5} fill={index === 0 ? '#f06a4d' : '#177c73'} stroke="#fff" strokeWidth="2" /><title>{point.location || point.title}</title></g>)}</svg></div><div className="trail-map-legend"><span><i className="latest" />最新位置</span><span><i />历史节点</span><small>点位来自承运商返回数据</small></div></section>
+  const lngs = points.map((point) => point.lng)
+  const minLat = Math.min(...lats); const maxLat = Math.max(...lats)
+  const latMid = (minLat + maxLat) / 2
+  const kx = Math.cos((latMid * Math.PI) / 180)
+  const minX = Math.min(...lngs) * kx; const maxX = Math.max(...lngs) * kx
+  // 跨度下限约 5km：点位过于集中时不放大，否则会把几十米的差别画成整条路线
+  const spanX = Math.max(maxX - minX, 0.05 * kx)
+  const spanY = Math.max(maxLat - minLat, 0.05)
+  const scale = Math.min((W - PAD * 2) / spanX, (H - PAD * 2) / spanY)
+  const px = (lng: number) => W / 2 + (lng * kx - (minX + maxX) / 2) * scale
+  const py = (lat: number) => H / 2 - (lat - (minLat + maxLat) / 2) * scale
+
+  const path = points.map((point) => `${px(point.lng).toFixed(1)},${py(point.lat).toFixed(1)}`).join(' ')
+  const totalKm = points.reduce((sum, point, index) => index === 0 ? 0 : sum + geoDistance(points[index - 1], point), 0)
+  const latest = points[0]
+  const origin = points[points.length - 1]
+  const cities = new Set(points.map((point) => (point.location ?? '').split(',')[0]).filter(Boolean))
+
+  return <section className="trail-map">
+    <header><div><MapPin size={16} /><b>地图轨迹</b></div><small>{points.length} 个坐标点 · 等距示意</small></header>
+    <div className="trail-map-canvas">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`快递地图轨迹，共 ${points.length} 个坐标点`}>
+        <defs>
+          <linearGradient id="trail-route" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="#2a9d8f" /><stop offset="1" stopColor="#f06a4d" />
+          </linearGradient>
+        </defs>
+        <g stroke="#e3ecec" strokeWidth="1">
+          {[0.25, 0.5, 0.75].map((ratio) => <line key={`h${ratio}`} x1="10" x2={W - 10} y1={H * ratio} y2={H * ratio} />)}
+          {[0.25, 0.5, 0.75].map((ratio) => <line key={`v${ratio}`} y1="10" y2={H - 10} x1={W * ratio} x2={W * ratio} />)}
+        </g>
+        <polyline points={path} fill="none" stroke="#ffffff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <polyline points={path} fill="none" stroke="url(#trail-route)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((point, index) => <circle key={`${point.time}-${index}`} cx={px(point.lng)} cy={py(point.lat)} r={index === 0 ? 5.5 : 3.5} fill={index === 0 ? '#f06a4d' : '#2a9d8f'} stroke="#fff" strokeWidth="2"><title>{`${point.location || point.title}（${point.time}）`}</title></circle>)}
+        <circle cx={px(latest.lng)} cy={py(latest.lat)} r="10" fill="none" stroke="#f06a4d" strokeWidth="1.5" opacity="0.4" />
+        <text x={px(latest.lng)} y={py(latest.lat) - 15} textAnchor="middle" fontSize="10" fontWeight="700" fill="#c2412a">{latest.location || latest.title}</text>
+        <text x={px(origin.lng)} y={py(origin.lat) + 21} textAnchor="middle" fontSize="10" fill="#4a6b68">{origin.location || origin.title}</text>
+      </svg>
+    </div>
+    <div className="trail-map-legend"><span><i className="latest" />最新位置</span><span><i />历史节点</span><small>直线跨度约 {totalKm < 10 ? totalKm.toFixed(1) : Math.round(totalKm)} km{cities.size > 1 ? ` · 途经 ${cities.size} 个城市` : ''}</small></div>
+    <p className="trail-map-note">点位为承运商返回的行政区域中心，非实时 GPS 定位；示意图按真实经纬度等比缩放。</p>
+  </section>
 }
 
 type AuthFormProps = {

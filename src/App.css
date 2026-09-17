@@ -156,9 +156,22 @@ button:disabled{cursor:not-allowed}
    而它内部的网格仍有 190px+150px 的最小宽度，内容便溢出容器、覆盖相邻元素。
    实测数据：字段容器 w=0，输入框 w=190（越界 190px），按钮 [543,627] 落在输入框区间内。
    修复：让面板在所有宽度都允许换行——提示回到独立一行，其余项目不再被挤压。
-   注意不要额外给 .tracking-query-fields 设 min-width：网格固有最小宽度是 190+150+10=350px，
    同时把字段容器的 min-width 由 0 改回 auto：网格列的硬下限是 190px+150px+10px 间距，
    min-width:0 允许容器被压到比该下限还窄，内容便会溢出（实测 901–1100px 区间下拉框越界）。
    改成 auto 后，放不下时是按钮换行，而不是输入框/下拉框压到别的元素上。 */
 .tracking-query{flex-wrap:wrap}
 .tracking-query-fields{min-width:auto}
+
+/* 8. 查询面板与地图轨迹的观感整理 ------------------------------------------
+   8.1 层级倒置：面板标题 12px 比它自己的说明文字 13px 还小，主次颠倒。
+   8.2 字段标签 13px 与输入内容同号，读起来像两行正文；标签降到 12px 让内容主导。
+   8.3 输入框与按钮高度不一，一行里三个控件底部参差；统一到 42px。 */
+.tracking-query-meta b{font-size:14px}
+.tracking-field>span{font-size:12px}
+.tracking-query select,.tracking-query input,.tracking-query button{height:42px;padding-top:0;padding-bottom:0}
+
+/* 8.4 地图轨迹：等距示意画布的配套样式（组件见 TrailMap） */
+.trail-map header b{font-size:13px}
+.trail-map-canvas{background:#fbfdfd}
+.trail-map-legend small{margin-left:auto}
+.trail-map-note{margin:8px 0 0;color:var(--soft);font-size:12px;line-height:1.5}
