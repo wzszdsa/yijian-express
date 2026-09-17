@@ -46,6 +46,7 @@ server-data
 # Local deployment bundles
 output/*.tgz
 output/*.b64
+output/*.png
 
 # 本地助手工作记录（非项目代码）
 .workbuddy-ai/
