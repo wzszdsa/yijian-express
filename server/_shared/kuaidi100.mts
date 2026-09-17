@@ -274,7 +274,7 @@ export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Prom
     // 没填 → 让他去填；填了仍不通过 → 号码与运单的收寄件人不一致，改号码而不是重试。
     if (error instanceof Kuaidi100UpstreamError && error.returnCode === '408') {
       throw new Kuaidi100PhoneRequiredError(phone
-        ? '手机号与运单的收寄件人不一致，请核对后重试'
+        ? '手机号与运单的收寄件人不一致，请核对；电商虚拟号请填「-」后的 4 位'
         : '该快递平台需填写收件人或寄件人手机号后才能查询')
     }
     throw error

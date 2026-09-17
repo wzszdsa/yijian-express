@@ -184,3 +184,9 @@ button:disabled{cursor:not-allowed}
 .tracking-field.phone-field{grid-column:1/-1}
 .tracking-field .required-tag{margin-left:4px;padding:1px 5px;border-radius:6px;background:#fdeceb;color:#b3402f;font-size:11px;font-style:normal}
 .tracking-field.phone-field input{letter-spacing:.5px}
+
+/* 9.3 手机号字段的补充说明：电商虚拟号（隐私号）是用户最容易填错的一类，
+      上游对号码校验不通过时只回「验证码错误」，所以要在输入前就把填法讲清楚。 */
+.tracking-field .field-hint{color:var(--soft);font-size:12px;line-height:1.55}
+.tracking-field .field-hint b{color:var(--muted);font-weight:600}
+.tracking-field .field-hint code{padding:1px 5px;border-radius:5px;background:#f4f1ee;color:var(--deep);font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
