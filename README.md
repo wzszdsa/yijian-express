@@ -154,6 +154,50 @@ curl http://127.0.0.1:3000/api/health
 
 随后配置 Nginx 反向代理与 Let's Encrypt 证书（香港节点可正常签发，无需备案）。环境变量完整清单、数据迁移、验证清单均见部署文档。
 
+### 更新部署（代码改动上线）
+
+**本地改完代码不会自动上线**，必须把提交送到服务器并重新构建：
+
+```bash
+cd /opt/yijian
+git pull                       # 依赖未变时不需要 npm ci
+npm run build
+systemctl restart yijian
+curl -s http://127.0.0.1:3000/api/health
+```
+
+- `dist/` 与 `server-dist/` 都在 `.gitignore` 中，**服务器必须从源码构建**，只同步产物会导致源码与线上不一致
+- `package.json` 未变时**跳过 `npm ci`**（省约 202MB 安装）；服务器上一次完整构建约 11 秒
+- 无数据库结构变更时无需迁移
+- App 为 Capacitor 远程加载（`server.url = https://wzzsl.fun`），**前端部署后 App 界面同步更新，无需重新打 APK**
+
+**判断「线上是不是旧版本」的两个快办法**：
+
+```bash
+# 1. 比对前端资源哈希：线上应与本地 dist/index.html 引用的一致
+curl -s https://wzzsl.fun/ | grep -o 'assets/[^"]*'
+
+# 2. 打一个只存在于新版本的接口：旧版本返回 404「接口不存在」
+curl -s -X POST https://wzzsl.fun/api/auth/change-password -H 'content-type: application/json' -d '{}'
+```
+
+**本机没有 GitHub 凭据时的替代路径（git bundle 经 SSH 直传）**：送**提交**而不是产物；bundle 的提交 SHA 与 `git push` 完全一致，日后补推送后服务器 `git pull` 会是 no-op，不会产生分叉。
+
+```bash
+# 本地：生成增量包（<服务器当前SHA> 取服务器上 git rev-parse HEAD 的结果）
+git bundle create /tmp/update.bundle <服务器当前SHA>..codex/aliyun-mysql-deploy
+git bundle verify /tmp/update.bundle
+scp -i ~/.ssh/yijian_hk /tmp/update.bundle root@47.76.244.209:/root/
+
+# 服务器：不能 fetch 进当前已检出的分支，要先落到 FETCH_HEAD 再 --ff-only
+cd /opt/yijian
+git fetch /root/update.bundle refs/heads/codex/aliyun-mysql-deploy
+git merge --ff-only FETCH_HEAD
+npm run build && systemctl restart yijian && rm -f /root/update.bundle
+```
+
+> 部署后请核对三件事：**服务器产物哈希与本地构建一致**、`/api/health` 正常、新接口按预期响应。若只推送了 GitHub 而没在服务器拉取，线上不会有任何变化。
+
 > **历史方案**：`deploy/aliyun/` 记录的是中国大陆轻量服务器（`47.122.112.1`）的部署方式。因域名未备案，该路径下 80/443 会被接入商阻断，已不适用。当前代码部署不依赖 Netlify Functions。
 
 ## 运单号查快递（快递100）
@@ -252,7 +296,13 @@ npm run detect:check
 - `POST /api/auth/login`：验证码或密码登录；请求体 `{ email, mode, code?, password? }`。
 - `GET /api/auth/me`：读取当前登录态；未登录返回 `401`，认证接口统一返回 JSON 且禁止缓存。
 - `POST /api/auth/logout`：销毁当前会话。
-- `POST /api/auth/set-password`：已登录且尚未设置密码的账号设置 6-128 位登录密码；已有密码的账号不会被覆盖。
+- `POST /api/auth/set-password`：已登录且尚未设置密码的账号设置 6-128 位登录密码；已有密码的账号不会被覆盖（返回 `409 PASSWORD_ALREADY_SET`）。
+- `POST /api/auth/change-password`：修改登录密码。身份证明**二选一**：`{ currentPassword, newPassword }` 或 `{ code, newPassword }`（`code` 为 `purpose=login` 的邮箱验证码，用于忘记原密码但仍有登录态时兜底）。成功后**保留本机会话、清理该账号的其他设备会话**，响应返回 `revokedSessions`。
+  - 校验顺序为「先证明身份、再判断新旧是否相同」，因此身份未通过时永远返回身份类错误，不会因新旧字符串相同而给出误导性提示
+  - 走验证码路径时拿不到原密码明文，服务端用 `verifyPassword(newPassword, hash)` 判断新旧是否相同
+  - 会话清理失败**不回滚密码**（密码已改成功），响应带 `revokeFailed: true` 并改文案如实告知
+  - 错误码：`AUTH_REQUIRED`(401 未登录) · `PASSWORD_NOT_SET`(409 从未设置过密码，应走 set-password) · `CREDENTIAL_REQUIRED`(400 原密码与验证码都没给) · `INVALID_PASSWORD`(400 新密码不在 6-128 位) · `INVALID_CURRENT_PASSWORD`(401 原密码不正确) · `INVALID_VERIFICATION_CODE`(401 验证码错误或已过期) · `PASSWORD_UNCHANGED`(400 新旧相同)
+  - 存储层对应 `setUserPassword`（带 `WHERE password_hash IS NULL`，仅首次）/ `replaceUserPassword`（无条件覆盖）/ `deleteUserSessions`（按用户清理会话），三者语义不同，**勿混用**
 
 ## 构建 Android Debug APK
 
@@ -297,6 +347,47 @@ APK 输出：
 ### 遗留观察（未修改）
 
 - 包裹卡片在网格中被拉伸到同行最高卡片的高度，"极兔"这类无取件码的卡片底部会留出空白。属视觉观感问题，不影响功能，未改动以免引入布局回归。
+
+## 界面走查记录（第二轮：可读性、对比度与浮层交互）
+
+在同一隔离测试账号中重跑「登录 → 查看包裹 → 打开详情 → 查看取件码 → 进入账号设置 → 修改密码」路径，覆盖桌面 1440×950 与移动 390×844，并对关键交互做程序化断言。
+
+### 已修复
+
+| # | 用户处境 | 问题 | 修改 |
+|---|---------|------|------|
+| 1 | 改密码时输错原密码 | 错误提示与普通提示**外观完全一致**——`.auth-error` 类在组件里用了，但 CSS 中从未定义 | 补 `.auth-hint.auth-error` 样式（强调色 + 圆形 `!` 标记），字段边框同步标红 |
+| 2 | 打开应用看包裹列表 | 先闪一下「还没有包裹记录」再跳出列表（`/api/parcels` 返回前无法区分「没有包裹」与「还没查完」） | 新增 `parcelsReady` 状态与骨架屏占位 |
+| 3 | 打开包裹详情或密码弹窗后按 Esc | 无反应。Esc 只绑定了侧栏菜单与账号菜单 | Esc 统一关闭全部浮层 |
+| 4 | 浮层打开时滚动页面 | 背景列表跟着一起滚 | 浮层打开期间锁定 `body` 滚动，关闭后恢复 |
+| 5 | 用键盘操作浮层 | 焦点仍留在背后的页面；抽屉缺少 `role` / `aria-modal` | 补齐语义；挂载时焦点移入、Tab 在浮层内循环、关闭后归还触发元素 |
+| 6 | 查看取件码 | 图标恒为「眼睛」，看不出当前是显示还是隐藏；触控目标约 24px | 图标随状态切换 `Eye`/`EyeOff`，补 `aria-pressed` 与说明性 `aria-label`，触控目标增至 32px |
+| 7 | 连续触发两条提示 | 前一条的计时器会提前清掉后一条 | 提示条改为单计时器 + 序号 key |
+| 8 | 长时间阅读页面文字 | 正文与说明文字普遍 12px，最低到 10.5px | 正文提升至 13px，移除低于 12px 的正文 |
+| 9 | 在浅色背景读次要文字 | `--soft` 白底仅 2.6:1、`--muted` 4.1:1、白字实心按钮 3.1:1，均低于 WCAG AA 的 4.5:1 | 重新取值：`--muted` 5.7:1、`--soft` 4.6:1、`--green` 4.9:1；新增 `--accent-strong` 供白字按钮（4.8:1） |
+| 10 | 用 Tab 遍历表单 | `select` 没有可见焦点样式 | 焦点环统一为 2px `--ring`，并覆盖 `select` / `a` / `[tabindex]` |
+| 11 | 系统开启了「减少动态效果」 | 过渡与动画照常播放 | 支持 `prefers-reduced-motion`；加载指示器保留但放慢，避免被误读为卡死 |
+
+### 验证方式与结果
+
+- `npm run lint` 0 warnings 0 errors；`npm run build` 通过
+- 改密码后端流程 **22 项断言全部通过**（隔离测试账号、本地 JSON 存储）：原密码错误 401、新旧相同 400、缺凭据 400、未登录 401、验证码路径成功、旧密码随即失效、新密码可登录、验证码登录路径未受影响、`set-password` 仍返回 409
+- 会话清理：第二台设备登录后改密码 → 该设备 401、本机保留 200、响应 `revokedSessions >= 1`
+- 程序化断言（无头浏览器）：抽屉 `role=dialog` + `aria-modal=true`、打开锁滚动、Esc 关闭并恢复滚动、弹窗初始焦点落在首个输入框、切换验证方式后焦点重新落位、字段级错误使弹窗保持打开
+- 视觉实测：`--muted #5c6874`、`--soft #6b7681`、主按钮 `rgb(199,71,42)`、正文 13px
+
+### 未验证项
+
+- 上述走查由 AI 在隔离账号中完成，**不等于真实用户测试**
+- 对比度按 WCAG 2.1 相对亮度公式**计算**得出，未用 axe / Lighthouse 等工具复核
+- 减少动效仅验证 CSS 规则生效，**未在开启该偏好的真实系统上走查**
+- 仅在 Chrome 验证；未覆盖屏幕阅读器实际朗读效果
+- 「改密码后其他设备下线」只在本地 JSON 存储上验证，**MySQL 路径未实测**（SQL 为 `DELETE ... WHERE user_id = ? AND token_hash <> ?`）
+
+### 遗留观察（未修改）
+
+- `src/App.css` 主体是压缩后的历史样式。本次改动以**文件末尾追加「UI 优化层」**实现（只覆盖 + 新增，不重写既有规则），便于审查与回滚。若日后要真正重构该文件，需重做一次完整视觉回归。
+- 服务端启动日志有 `[yijian:env] 环境文件加载失败 ... open '.env'` 警告。环境变量由 systemd 的 `EnvironmentFile` 注入，工作目录下没有 `.env` 属正常，功能不受影响，仅为日志噪音。
 
 ## 当前仍待完善
 
