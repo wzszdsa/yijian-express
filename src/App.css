@@ -147,3 +147,18 @@ button:disabled{cursor:not-allowed}
   .code-row .icon-ghost,.drawer-code .icon-ghost{width:40px;height:40px}
   .modal-close,.icon-btn{min-width:40px;min-height:40px}
 }
+
+/* 7. 修复查询面板与识别提示重叠 --------------------------------------------
+   现象（1501px 视口实测）：输入框与「查询快递」按钮压在面板说明文字上面。
+   根因：识别提示 .detect-hint 是 flex-basis:100%，设计上要独占一行；
+   但 .tracking-query 只在 ≤900px 时才 flex-wrap，宽屏下是 nowrap，
+   于是提示被塞进同一行并抢占宽度 → .tracking-query-fields 因 min-width:0 塌成 0 宽，
+   而它内部的网格仍有 190px+150px 的最小宽度，内容便溢出容器、覆盖相邻元素。
+   实测数据：字段容器 w=0，输入框 w=190（越界 190px），按钮 [543,627] 落在输入框区间内。
+   修复：让面板在所有宽度都允许换行——提示回到独立一行，其余项目不再被挤压。
+   注意不要额外给 .tracking-query-fields 设 min-width：网格固有最小宽度是 190+150+10=350px，
+   同时把字段容器的 min-width 由 0 改回 auto：网格列的硬下限是 190px+150px+10px 间距，
+   min-width:0 允许容器被压到比该下限还窄，内容便会溢出（实测 901–1100px 区间下拉框越界）。
+   改成 auto 后，放不下时是按钮换行，而不是输入框/下拉框压到别的元素上。 */
+.tracking-query{flex-wrap:wrap}
+.tracking-query-fields{min-width:auto}
