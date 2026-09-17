@@ -132,3 +132,18 @@ button:disabled{cursor:not-allowed}
   /* 加载指示器表达的是「进行中」这一状态，完全静止会被误读为卡死，因此保留但放慢 */
   .spin{animation-duration:1.8s !important;animation-iteration-count:infinite !important}
 }
+
+/* 6. 触控目标 --------------------------------------------------------------
+   实测（360×740，Android 是主要交付形态，Capacitor 远程加载）：
+   卡片里的「查看完整轨迹」只有 21px 高——连 WCAG 2.2 的 2.5.8「目标尺寸最小 24×24」
+   都不满足；「我已取件」31px、账号设置的「修改密码」34px、各主按钮 39px，
+   均低于 iOS HIG 44pt / Material 48dp 的推荐值。
+   这里分两档：全平台至少 32px（过 AA），窄屏统一抬到 44px。 */
+.card-actions button,.card-foot button{min-height:32px}
+@media (max-width: 620px){
+  .submit,.empty-action,.tracking-query button,.drawer-confirm,.logout,.connect,.sync-btn,.outline-btn,.integration button,.card-actions button,.card-foot button,.setting-row button{min-height:44px}
+  .tabs button{min-height:40px}
+  .nav-item{min-height:48px}
+  .code-row .icon-ghost,.drawer-code .icon-ghost{width:40px;height:40px}
+  .modal-close,.icon-btn{min-width:40px;min-height:40px}
+}
