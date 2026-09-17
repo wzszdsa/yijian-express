@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { ArrowUpRight, Bell, Check, ChevronRight, CircleAlert, CircleCheck, Clipboard, Clock3, Copy, Eye, EyeOff, House, KeyRound, Layers3, Link2, LockKeyhole, LogIn, LogOut, MapPin, Menu, Package, PackageCheck, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Truck, UserRound, X, Zap } from 'lucide-react'
+import { App as CapacitorApp } from '@capacitor/app'
 import { apiRequest } from './api'
 import './App.css'
 
@@ -178,6 +179,57 @@ export default function App() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [passwordBusy])
+
+  // Android 物理返回键。此前完全没有处理：未安装 App 插件、也没有 backButton 监听，
+  // 于是真机上打开包裹详情或密码弹窗后按返回会直接退出 App。
+  // 处理顺序：先关浮层 → 再回到「我的包裹」→ 都没有时把 App 收进后台（而非直接杀掉）。
+  // 用 ref 持有最新实现，避免监听器闭包读到旧状态；注册一次即可，无需随状态重注册。
+  // 在 effect 里刷新（而不是渲染期直接赋值），否则触发 react-hooks 的 refs 规则。
+  const handleBackRef = useRef<() => boolean>(() => false)
+  useEffect(() => {
+    handleBackRef.current = () => {
+      if (passwordDialog) {
+        // 提交中不关闭，避免请求还在飞就把弹窗撤掉
+        if (!passwordBusy) setPasswordDialog(null)
+        return true
+      }
+      if (mobileNav || accountMenuOpen || selectedId) {
+        setMobileNav(false)
+        setAccountMenuOpen(false)
+        setSelectedId(null)
+        return true
+      }
+      if (view !== 'packages') {
+        setView('packages')
+        return true
+      }
+      return false
+    }
+  })
+
+  useEffect(() => {
+    let remove: (() => void) | undefined
+    let cancelled = false
+    void (async () => {
+      try {
+        const handle = await CapacitorApp.addListener('backButton', () => {
+          // 返回 true 表示已被浮层或页面切换消费；否则收进后台，与 Android 现代返回行为一致
+          if (!handleBackRef.current()) void CapacitorApp.minimizeApp()
+        })
+        if (cancelled) {
+          void handle.remove()
+          return
+        }
+        remove = () => { void handle.remove() }
+      } catch {
+        // 浏览器等非 Capacitor 原生环境没有该插件，忽略即可
+      }
+    })()
+    return () => {
+      cancelled = true
+      remove?.()
+    }
+  }, [])
 
   // 浮层打开时锁定背景滚动，避免抽屉/弹窗后面的列表跟着一起滚。
   useEffect(() => {
