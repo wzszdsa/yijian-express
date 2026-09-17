@@ -1,4 +1,4 @@
-import { consumeOtp, deleteSession, incrementOtpAttempts, readOtp, readSession, readUserByEmail as readStoredUserByEmail, readUserById as readStoredUserById, saveUser as saveStoredUser, setUserPassword as setStoredUserPassword, writeSession, type StoredOtp, type StoredSession, type StoredUser } from './storage.mjs'
+import { consumeOtp, deleteSession, deleteUserSessions, incrementOtpAttempts, readOtp, readSession, readUserByEmail as readStoredUserByEmail, readUserById as readStoredUserById, replaceUserPassword as replaceStoredUserPassword, saveUser as saveStoredUser, setUserPassword as setStoredUserPassword, writeSession, type StoredOtp, type StoredSession, type StoredUser } from './storage.mjs'
 import { bodyOf, clearSessionCookie, cookieValue, json, sessionCookie } from './http.mjs'
 import { createToken, hashSecret, hashToken, OTP_MAX_ATTEMPTS, SESSION_TTL_SECONDS, verifySecret } from './security.mjs'
 
@@ -29,6 +29,11 @@ export async function verifyPassword(password: string, passwordHash?: string): P
 
 export async function setUserPassword(userId: string, password: string): Promise<boolean> {
   return setStoredUserPassword(userId, await createPasswordHash(password), new Date().toISOString())
+}
+
+/** 覆盖已有密码；调用方负责先校验原密码或验证码。 */
+export async function replaceUserPassword(userId: string, password: string): Promise<boolean> {
+  return replaceStoredUserPassword(userId, await createPasswordHash(password), new Date().toISOString())
 }
 
 export function publicUser(user: UserRecord): Record<string, unknown> {
@@ -63,6 +68,17 @@ export async function destroySession(request: Request): Promise<string> {
   const token = cookieValue(request, 'yijian_session')
   if (token) await deleteSession(hashToken(token))
   return clearSessionCookie(request)
+}
+
+/** 当前请求所用会话的 token 哈希，用于在清理会话时把本机保留下来。 */
+export function currentSessionHash(request: Request): string | undefined {
+  const token = cookieValue(request, 'yijian_session')
+  return token ? hashToken(token) : undefined
+}
+
+/** 让该用户的其他会话立即失效；返回被清理的会话数。 */
+export async function revokeOtherSessions(userId: string, keepTokenHash?: string): Promise<number> {
+  return deleteUserSessions(userId, keepTokenHash)
 }
 
 export function otpKey(email: string, purpose: AuthPurpose): string {

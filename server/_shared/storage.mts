@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createPool, type Pool, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise'
 import { env, isProduction } from './config.mjs'
@@ -253,6 +253,29 @@ export async function setUserPassword(userId: string, passwordHash: string, pass
   return result.affectedRows > 0
 }
 
+/**
+ * 无条件覆盖已有密码（用于「修改密码」）。
+ * 与 setUserPassword 的区别：setUserPassword 只在 password_hash IS NULL 时写入（首次设置），
+ * 本函数不做该限制，因此调用方必须已经完成身份校验（原密码或验证码）。
+ */
+export async function replaceUserPassword(userId: string, passwordHash: string, passwordSetAt: string): Promise<boolean> {
+  if (storageProvider() === 'local') {
+    const user = await readLocalRecord<StoredUser>(`user:id:${userId}`)
+    if (!user) return false
+    const next = { ...user, passwordHash, passwordSetAt, updatedAt: passwordSetAt }
+    await writeLocalRecord(`user:email:${user.email}`, next)
+    await writeLocalRecord(`user:id:${user.id}`, next)
+    return true
+  }
+  const [result] = await getMysqlPool().execute<ResultSetHeader>(
+    `UPDATE ${USER_TABLE}
+     SET password_hash = ?, password_set_at = ?, updated_at = ?
+     WHERE id = ?`,
+    [passwordHash, new Date(passwordSetAt), new Date(passwordSetAt), userId],
+  )
+  return result.affectedRows > 0
+}
+
 export async function readOtp(email: string, purpose: string): Promise<StoredOtp | null> {
   if (storageProvider() === 'local') return readLocalRecord<StoredOtp>(`otp:${purpose}:${email}`)
   const [rows] = await getMysqlPool().query<MysqlOtpRow[]>(
@@ -342,6 +365,41 @@ export async function deleteSession(tokenHash: string): Promise<void> {
     return
   }
   await getMysqlPool().execute<ResultSetHeader>(`DELETE FROM ${SESSION_TABLE} WHERE token_hash = ?`, [tokenHash])
+}
+
+/**
+ * 清理某个用户的会话（改密码后让其他设备下线）。
+ * exceptTokenHash 用于保留当前设备：本地存储需要遍历目录，因为 session 的 key 是 token 哈希，
+ * 没有 userId 索引，无法直接定位。
+ */
+export async function deleteUserSessions(userId: string, exceptTokenHash?: string): Promise<number> {
+  if (storageProvider() === 'local') {
+    let entries: string[]
+    try {
+      entries = await readdir(LOCAL_ROOT)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+      throw error
+    }
+    let removed = 0
+    for (const entry of entries) {
+      if (!entry.endsWith('.json')) continue
+      // 文件名是 key 的 base64url，先还原再按前缀筛出会话记录
+      const key = Buffer.from(entry.slice(0, -'.json'.length), 'base64url').toString('utf8')
+      if (!key.startsWith('session:')) continue
+      if (exceptTokenHash && key === `session:${exceptTokenHash}`) continue
+      const record = await readLocalRecord<StoredSession>(key)
+      if (!record || record.userId !== userId) continue
+      await deleteLocalRecord(key)
+      removed += 1
+    }
+    return removed
+  }
+  const [result] = await getMysqlPool().execute<ResultSetHeader>(
+    `DELETE FROM ${SESSION_TABLE} WHERE user_id = ?${exceptTokenHash ? ' AND token_hash <> ?' : ''}`,
+    exceptTokenHash ? [userId, exceptTokenHash] : [userId],
+  )
+  return result.affectedRows
 }
 
 export function isUniqueViolation(error: unknown): boolean {

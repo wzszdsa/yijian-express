@@ -7,6 +7,7 @@ import authMe from './handlers/auth-me.mjs'
 import authRegister from './handlers/auth-register.mjs'
 import authSendCode from './handlers/auth-send-code.mjs'
 import authSetPassword from './handlers/auth-set-password.mjs'
+import authChangePassword from './handlers/auth-change-password.mjs'
 import parcelConfirmPickup from './handlers/parcel-confirm-pickup.mjs'
 import parcelDetectCarrier from './handlers/parcel-detect-carrier.mjs'
 import parcelList from './handlers/parcel-list.mjs'
@@ -37,6 +38,7 @@ const routes = new Map<string, Handler>([
   ['POST /api/auth/register', authRegister],
   ['POST /api/auth/send-code', authSendCode],
   ['POST /api/auth/set-password', authSetPassword],
+  ['POST /api/auth/change-password', authChangePassword],
   ['POST /api/parcels/confirm-pickup', parcelConfirmPickup],
   ['POST /api/parcels/detect-carrier', parcelDetectCarrier],
   ['GET /api/parcels', parcelList],
