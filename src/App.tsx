@@ -19,7 +19,7 @@ type PasswordFieldError = { field: 'current' | 'code'; message: string }
 /** 提示条带自增序号，保证同文案重复触发时动画与计时都会重新开始。 */
 type Notice = { text: string; seq: number }
 type SendCodeResult = { ok: boolean; status: number; retryAfter?: number; message?: string; code?: string }
-type ParcelQueryResponse = { parcels?: Parcel[]; parcel?: { trackingNo: string; status: Status }; message?: string; code?: string; detection?: DetectionResult }
+type ParcelQueryResponse = { parcels?: Parcel[]; parcel?: { trackingNo: string; status: Status }; message?: string; code?: string; detection?: DetectionResult; carrierCode?: string }
 type ParcelMutationResponse = { message?: string; code?: string }
 
 type Event = { time: string; title: string; text: string; active?: boolean; location?: string; lat?: number; lng?: number }
@@ -54,6 +54,13 @@ const providerList: Provider[] = [
 ]
 
 const selectableProviders = providerList.filter((provider): provider is Provider & { code: string } => Boolean(provider.code))
+
+/**
+ * 快递100 要求必填收寄件人手机号的承运商。
+ * 官方《实时快递查询接口》文档：phone 字段「顺丰速运、顺丰快运、中通快递必填，其他快递公司选填」，
+ * 缺失时上游返回 408「快递公司参数异常：验证码错误」。本项目顺丰速运/快运共用 shunfeng 编码。
+ */
+const PHONE_REQUIRED_CARRIERS = new Set(['shunfeng', 'zto'])
 
 const nav: Array<{ key: View; label: string; icon: ReactNode }> = [
   { key: 'packages', label: '我的包裹', icon: <House size={18} /> },
@@ -92,6 +99,10 @@ export default function App() {
   const [detecting, setDetecting] = useState(false)
   // 用户一旦手动指定过平台，识别结果就不再覆盖它（人工选择优先，避免"改回去"的体验倒退）
   const [carrierTouched, setCarrierTouched] = useState(false)
+  // 收寄件人手机号：仅中通/顺丰需要。存在这里是为了让「重新查询同一单号」不必重填。
+  const [trackingPhone, setTrackingPhone] = useState('')
+  // 服务端明确要求手机号时置位：这样即便平台尚未确定（自动识别未定案），字段也能出现并给出指引。
+  const [phoneRequiredByServer, setPhoneRequiredByServer] = useState(false)
   const detectionSeq = useRef(0)
   const [notice, setNotice] = useState<Notice | null>(null)
   const noticeSeq = useRef(0)
@@ -217,6 +228,8 @@ export default function App() {
   // 生效平台：人工指定优先；否则在未手动指定时用高置信度识别结果兜底。
   const effectiveCarrier = trackingCarrier
     || (carrierTouched ? '' : (activeDetection?.best?.confidence === 'high' ? activeDetection.best.carrierCode : ''))
+  // 手机号字段的显示条件：生效平台在必填名单内，或服务端已明确要求（含自动识别出中通/顺丰的情形）。
+  const phoneNeeded = PHONE_REQUIRED_CARRIERS.has(effectiveCarrier) || phoneRequiredByServer
 
   const selected = useMemo(() => parcels.find((item) => item.id === selectedId) ?? null, [parcels, selectedId])
   const connected = new Set(parcels.map((item) => item.carrier)).size
@@ -245,19 +258,27 @@ export default function App() {
     setMobileNav(false)
     setAccountMenuOpen((open) => !open)
   }
-  const queryTrackingNumber = async (carrierCode: string, trackingValue: string) => {
+  const queryTrackingNumber = async (carrierCode: string, trackingValue: string, phoneValue = '') => {
     if (syncing) return
     const normalizedCarrierCode = carrierCode.trim().toLowerCase()
     // 平台可以由用户手动指定，也可以留空交由服务端按单号识别。
     if (normalizedCarrierCode && !selectableProviders.some((provider) => provider.code === normalizedCarrierCode)) return toast('请选择快递平台')
     const normalizedTrackingNo = trackingValue.trim().replace(/\s/g, '')
     if (!/^[A-Za-z0-9-]{4,128}$/.test(normalizedTrackingNo)) return toast('请输入正确的快递运单号')
+    const normalizedPhone = phoneValue.trim()
+    // 平台已确定是中通/顺丰时不发无谓请求：直接展开手机号字段，把「缺什么」说在前面。
+    if (PHONE_REQUIRED_CARRIERS.has(normalizedCarrierCode) && !normalizedPhone) {
+      setPhoneRequiredByServer(true)
+      return toast('查询中通、顺丰需要填写收寄件人手机号')
+    }
     setSyncing(true)
     try {
-      const { response, data } = await apiRequest<ParcelQueryResponse>('/api/parcels/query-tracking', { method: 'POST', body: JSON.stringify({ ...(normalizedCarrierCode ? { carrierCode: normalizedCarrierCode } : {}), trackingNo: normalizedTrackingNo }) })
+      const { response, data } = await apiRequest<ParcelQueryResponse>('/api/parcels/query-tracking', { method: 'POST', body: JSON.stringify({ ...(normalizedCarrierCode ? { carrierCode: normalizedCarrierCode } : {}), trackingNo: normalizedTrackingNo, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }) })
       if (!response.ok || !data) {
         // 歧义或未能识别时，把候选交给用户确认，绝不静默换平台重试。
         if (data?.detection) setDetection(data.detection)
+        // 服务端要求手机号（含自动识别出中通/顺丰、以及号码对不上的情况）：展开字段让用户就地补齐再查。
+        if (data?.code === 'PHONE_REQUIRED' || data?.code === 'INVALID_PHONE') setPhoneRequiredByServer(true)
         return toast(data?.message ?? '运单查询失败，请稍后重试')
       }
       const { response: parcelResponse, data: parcelData } = await apiRequest<ParcelQueryResponse>('/api/parcels')
@@ -271,7 +292,7 @@ export default function App() {
       setSyncing(false)
     }
   }
-  const sync = () => { void queryTrackingNumber(effectiveCarrier, trackingNumber) }
+  const sync = () => { void queryTrackingNumber(effectiveCarrier, trackingNumber, trackingPhone) }
 
   const chooseCarrier = (carrierCode: string) => {
     setCarrierTouched(true)
@@ -506,7 +527,7 @@ export default function App() {
       <main className="main">
         <header className="topbar"><button className="mobile-menu" type="button" aria-label={mobileNav ? '关闭菜单' : '打开菜单'} aria-expanded={mobileNav} aria-controls="primary-navigation" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button><div className="crumb"><span>驿站工作台</span><ChevronRight size={14} /><b>{view === 'packages' ? '我的包裹' : view === 'sources' ? '数据来源' : '账号设置'}</b></div><div className="top-actions" ref={accountAreaRef}><button className="icon-btn dot" type="button" aria-label="查看提醒" onClick={() => toast('暂无新的未读提醒')}><Bell size={18} /></button><button className="account-chip" type="button" aria-haspopup="menu" aria-expanded={accountMenuOpen} aria-label={`打开账号菜单，当前账号 ${maskEmail(user.email)}`} onClick={toggleAccountMenu}><span className="avatar small">{avatarText(user.email)}</span><span>{maskEmail(user.email)}</span><ChevronRight size={14} /></button>{accountMenuOpen && <div className="account-menu" role="menu"><div className="account-menu-user"><span className="avatar small">{avatarText(user.email)}</span><div><b>{maskEmail(user.email)}</b><small>当前登录账号</small></div></div><button type="button" role="menuitem" onClick={openAccountSettings}><Settings2 size={15} />账号设置<ChevronRight size={14} /></button>{user.passwordSet && <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setPasswordDialog('change') }}><KeyRound size={15} />修改登录密码<ChevronRight size={14} /></button>}<button type="button" role="menuitem" onClick={() => void logout()}><LogOut size={15} />退出当前账号</button></div>}</div></header>
         <div className="content">
-          {view === 'packages' && <Packages parcels={parcels} parcelsReady={parcelsReady} filtered={filtered} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} effectiveCarrier={effectiveCarrier} trackingNumber={trackingNumber} setTrackingNumber={setTrackingNumber} detection={activeDetection} detecting={activeDetecting} onChooseCarrier={chooseCarrier} waiting={waiting} transit={transit} connected={connected} syncing={syncing} lastSync={lastSync} onSync={sync} onViewSources={() => { setView('sources'); setAccountMenuOpen(false) }} visible={visible} setVisible={setVisible} onOpen={setSelectedId} onCopy={copy} onConfirm={confirm} confirmingId={confirmingId} />}
+          {view === 'packages' && <Packages parcels={parcels} parcelsReady={parcelsReady} filtered={filtered} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} effectiveCarrier={effectiveCarrier} trackingNumber={trackingNumber} setTrackingNumber={setTrackingNumber} trackingPhone={trackingPhone} setTrackingPhone={setTrackingPhone} phoneNeeded={phoneNeeded} detection={activeDetection} detecting={activeDetecting} onChooseCarrier={chooseCarrier} waiting={waiting} transit={transit} connected={connected} syncing={syncing} lastSync={lastSync} onSync={sync} onViewSources={() => { setView('sources'); setAccountMenuOpen(false) }} visible={visible} setVisible={setVisible} onOpen={setSelectedId} onCopy={copy} onConfirm={confirm} confirmingId={confirmingId} />}
           {view === 'sources' && <Sources connected={connected} onExplain={toast} />}
           {view === 'settings' && <Settings email={user.email} passwordSet={Boolean(user.passwordSet)} autoSync={autoSync} push={push} setAutoSync={setAutoSync} setPush={setPush} onPreferenceSaved={() => toast('偏好设置已保存到本设备')} onLogout={logout} onSetPassword={() => setPasswordDialog('set')} onChangePassword={() => setPasswordDialog('change')} />}
         </div>
@@ -571,11 +592,20 @@ function providerPale(carrierCode: string): string {
   return selectableProviders.find((provider) => provider.code === carrierCode)?.pale ?? '#e9faf3'
 }
 
-function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, setQuery, effectiveCarrier, trackingNumber, setTrackingNumber, detection, detecting, onChooseCarrier, waiting, transit, connected, syncing, lastSync, onSync, onViewSources, visible, setVisible, onOpen, onCopy, onConfirm, confirmingId }: { parcels: Parcel[]; parcelsReady: boolean; filtered: Parcel[]; filter: Filter; setFilter: (value: Filter) => void; query: string; setQuery: (value: string) => void; effectiveCarrier: string; trackingNumber: string; setTrackingNumber: (value: string) => void; detection: DetectionResult | null; detecting: boolean; onChooseCarrier: (carrierCode: string) => void; waiting: number; transit: number; connected: number; syncing: boolean; lastSync: string; onSync: () => void; onViewSources: () => void; visible: Record<string, boolean>; setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; onOpen: (id: string) => void; onCopy: (code: string) => void; onConfirm: (parcel: Parcel) => void | Promise<void>; confirmingId: string | null }) {
+function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, setQuery, effectiveCarrier, trackingNumber, setTrackingNumber, trackingPhone, setTrackingPhone, phoneNeeded, detection, detecting, onChooseCarrier, waiting, transit, connected, syncing, lastSync, onSync, onViewSources, visible, setVisible, onOpen, onCopy, onConfirm, confirmingId }: { parcels: Parcel[]; parcelsReady: boolean; filtered: Parcel[]; filter: Filter; setFilter: (value: Filter) => void; query: string; setQuery: (value: string) => void; effectiveCarrier: string; trackingNumber: string; setTrackingNumber: (value: string) => void; trackingPhone: string; setTrackingPhone: (value: string) => void; phoneNeeded: boolean; detection: DetectionResult | null; detecting: boolean; onChooseCarrier: (carrierCode: string) => void; waiting: number; transit: number; connected: number; syncing: boolean; lastSync: string; onSync: () => void; onViewSources: () => void; visible: Record<string, boolean>; setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; onOpen: (id: string) => void; onCopy: (code: string) => void; onConfirm: (parcel: Parcel) => void | Promise<void>; confirmingId: string | null }) {
   const trackingInputRef = useRef<HTMLInputElement>(null)
+  const phoneInputRef = useRef<HTMLInputElement>(null)
   const hasParcels = parcels.length > 0
   // 首次加载完成前不渲染列表与空状态，避免「还没有包裹记录」一闪而过。
   const listVisible = parcelsReady && hasParcels
+
+  // 手机号字段出现时（选中中通/顺丰，或服务端明确要求）把焦点送过去，
+  // 用户不必自己回头找这个新出现的输入框。只在 false→true 时触发，避免每次渲染都抢焦点。
+  const phoneNeededBefore = useRef(phoneNeeded)
+  useEffect(() => {
+    if (phoneNeeded && !phoneNeededBefore.current) phoneInputRef.current?.focus()
+    phoneNeededBefore.current = phoneNeeded
+  }, [phoneNeeded])
 
   return <>
     <Header kicker={<><Sparkles size={14} /> 运单号查件</>} title={<>你的包裹，<span>一眼就够了。</span></>} text={hasParcels ? `已保存 ${parcels.length} 个包裹${lastSync && lastSync !== '尚未查询' ? `，最后更新于 ${lastSync}` : ''}。` : '查询结果会保存到你的账号，下次打开或换设备登录都能接着看。'} />
@@ -583,7 +613,8 @@ function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, s
       <div className="tracking-query-meta"><span><Package size={18} /></span><label htmlFor="parcel-tracking"><b>运单号查快递</b><small>粘贴或输入单号，自动识别快递平台；结果只保存到当前账号。</small></label></div>
       <div className="tracking-query-fields">
         <label className="tracking-field" htmlFor="parcel-tracking"><span>快递运单号</span><input id="parcel-tracking" ref={trackingInputRef} value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value.replace(/\s/g, '').slice(0, 128))} autoComplete="off" placeholder="请输入快递运单号" maxLength={128} required /></label>
-        <label className="tracking-field" htmlFor="parcel-carrier"><span>快递平台<em className="optional-tag">选填</em></span><select id="parcel-carrier" value={effectiveCarrier} onChange={(event) => onChooseCarrier(event.target.value)}><option value="">不填，自动识别</option>{selectableProviders.map((provider) => <option key={provider.code} value={provider.code}>{provider.name}</option>)}</select></label>
+        <label className="tracking-field" htmlFor="parcel-carrier"><span>快递平台<em className="optional-tag">选填</em></span><select id="parcel-carrier" value={effectiveCarrier} onChange={(event) => onChooseCarrier(event.target.value)}><option value="">不填，自动识别</option>{selectableProviders.map((provider) => <option key={provider.code} value={provider.code}>{provider.name}{PHONE_REQUIRED_CARRIERS.has(provider.code) ? '（需手机号）' : ''}</option>)}</select></label>
+        {phoneNeeded && <label className="tracking-field phone-field" htmlFor="parcel-phone"><span>手机号<em className="required-tag">必填</em></span><input id="parcel-phone" ref={phoneInputRef} value={trackingPhone} onChange={(event) => setTrackingPhone(event.target.value.replace(/[^0-9\s()+-]/g, '').slice(0, 20))} inputMode="tel" autoComplete="off" placeholder="收寄件人手机号，虚拟号填后四位" maxLength={20} /></label>}
       </div>
       <button type="submit" disabled={syncing || !trackingNumber.trim()}>{syncing ? '查询中…' : '查询快递'}</button>
       <DetectionHint detection={detection} detecting={detecting} effectiveCarrier={effectiveCarrier} onChooseCarrier={onChooseCarrier} />
@@ -592,7 +623,7 @@ function Packages({ parcels, parcelsReady, filtered, filter, setFilter, query, s
     {listVisible && <div className="section-head"><div><h2>包裹列表</h2><span>{filtered.length} 个结果</span></div><div className="section-tools"><label className="search"><Search size={16} aria-hidden="true" /><input type="search" aria-label="搜索包裹" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索平台、包裹或单号" /></label><span className="sync-label"><Zap size={15} /> 查询后自动保存</span></div></div>}
     {listVisible && <div className="tabs" role="group" aria-label="按状态筛选包裹">{(['全部', '待取件', '运输中', '已完成'] as Filter[]).map((item) => <button key={item} type="button" aria-pressed={filter === item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}{item !== '全部' && <em>{parcels.filter((parcel) => parcel.status === item).length}</em>}</button>)}</div>}
     {!parcelsReady ? <ParcelSkeleton /> : !hasParcels ? <div className="empty empty-first"><Package size={24} /><strong>还没有包裹记录</strong><span>输入快递运单号，系统会识别快递平台并保存物流信息。</span><button className="empty-action" type="button" onClick={() => trackingInputRef.current?.focus()}>查询第一个包裹 <ChevronRight size={14} /></button></div> : filtered.length ? <div className="parcel-grid">{filtered.map((parcel) => <Card key={parcel.id} parcel={parcel} shown={Boolean(visible[parcel.id])} toggle={() => setVisible((items) => ({ ...items, [parcel.id]: !items[parcel.id] }))} onOpen={() => onOpen(parcel.id)} onCopy={onCopy} onConfirm={onConfirm} confirming={confirmingId === parcel.id} />)}</div> : <div className="empty"><Search size={24} /><strong>没有找到匹配的包裹</strong><span>试试搜索其他平台、包裹名称或运单号。</span></div>}
-    <div className="integration"><div className="integration-icon"><CircleAlert size={18} /></div><div><strong>查询说明</strong><p>输入运单号后，系统按公开单号规则识别快递平台并查询真实物流；纯数字单号可能对应多个平台，此时会请你确认。取件码仅在上游明确返回时展示，不会根据运单号猜测。</p></div><button onClick={onViewSources}>查看查询方式 <ArrowUpRight size={15} /></button></div>
+    <div className="integration"><div className="integration-icon"><CircleAlert size={18} /></div><div><strong>查询说明</strong><p>输入运单号后，系统按公开单号规则识别快递平台并查询真实物流；纯数字单号可能对应多个平台，此时会请你确认。取件码仅在上游明确返回时展示，不会根据运单号猜测。中通、顺丰按快递100 要求需填写收寄件人手机号。</p></div><button onClick={onViewSources}>查看查询方式 <ArrowUpRight size={15} /></button></div>
   </>
 }
 

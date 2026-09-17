@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS yijian_parcels (
   pickup_code VARCHAR(128) NULL,
   pickup_location VARCHAR(255) NULL,
   eta VARCHAR(128) NULL,
+  -- 查询时用过的收寄件人电话（中通/顺丰在快递100 为必填）。仅用于同单号复填，不对外展示。
+  query_phone VARCHAR(32) NULL,
   last_synced_at DATETIME(3) NOT NULL,
   created_at DATETIME(3) NOT NULL,
   updated_at DATETIME(3) NOT NULL,

@@ -33,6 +33,11 @@ type ParcelRow = {
   pickup_code: string | null
   pickup_location: string | null
   eta: string | null
+  /**
+   * 查询时用过的收寄件人电话（中通/顺丰必填）。
+   * 存下来只为「同一单号不必重复填写」，不对外展示。
+   */
+  query_phone: string | null
   last_synced_at: string
 }
 
@@ -172,7 +177,7 @@ export async function listParcels(userId: string): Promise<StoredParcel[]> {
   const pool = getMysqlPool()
   const [rows] = await pool.query<MysqlParcelRow[]>(
     `SELECT id,user_id,tracking_no,carrier_code,carrier_name,status,status_detail,location,
-            pickup_code,pickup_location,eta,last_synced_at
+            pickup_code,pickup_location,eta,query_phone,last_synced_at
      FROM yijian_parcels WHERE user_id = ? ORDER BY last_synced_at DESC`,
     [userId],
   )
@@ -190,6 +195,25 @@ export async function listParcels(userId: string): Promise<StoredParcel[]> {
     byParcel.set(event.parcel_id, current)
   }
   return rows.map((row) => parcelFromRow(row, byParcel.get(row.id) ?? []))
+}
+
+/**
+ * 读取该用户、该单号此前保存过的查询电话。
+ * 用途：中通/顺丰重新查询时自动复用，用户不必每次重填。
+ * 只用于服务端拼查询参数，不进入任何面向用户的返回体。
+ */
+export async function readParcelQueryPhone(userId: string, trackingNo: string, carrierCode: string): Promise<string | null> {
+  if (storageProvider() === 'local') {
+    const records = await readLocalRecord<LocalParcelRecord[]>(`parcels:${userId}`) ?? []
+    const record = records.find((item) => item.row.tracking_no === trackingNo && item.row.carrier_code === carrierCode)
+    return record?.row.query_phone ?? null
+  }
+  const [rows] = await getMysqlPool().query<MysqlParcelRow[]>(
+    `SELECT query_phone FROM yijian_parcels
+     WHERE user_id = ? AND tracking_no = ? AND carrier_code = ? LIMIT 1`,
+    [userId, trackingNo, carrierCode],
+  )
+  return rows[0]?.query_phone ?? null
 }
 
 export async function confirmParcelPickup(userId: string, parcelId: string): Promise<boolean> {
@@ -284,6 +308,8 @@ export async function saveParcel(userId: string, candidate: Kuaidi100TrackingCan
       pickup_code: pickup.code ?? existing?.row.pickup_code ?? null,
       pickup_location: pickup.location ?? existing?.row.pickup_location ?? null,
       eta: detail.eta ?? null,
+      // 与取件码同理：本次没带电话时沿用已存值，避免重新查询把已保存的电话抹掉。
+      query_phone: candidate.phone ?? existing?.row.query_phone ?? null,
       last_synced_at: now,
     }
     const nextEvents = [...(existing?.events ?? []), ...eventRows.map((event) => ({ ...event, parcel_id: id }))]
@@ -300,18 +326,19 @@ export async function saveParcel(userId: string, candidate: Kuaidi100TrackingCan
     await connection.execute<ResultSetHeader>(
       `INSERT INTO yijian_parcels
         (id,user_id,tracking_no,carrier_code,carrier_name,status,status_detail,location,
-         pickup_code,pickup_location,eta,last_synced_at,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))
+         pickup_code,pickup_location,eta,query_phone,last_synced_at,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))
        ON DUPLICATE KEY UPDATE
         carrier_name = VALUES(carrier_name), status = VALUES(status), status_detail = VALUES(status_detail),
         location = VALUES(location), pickup_code = COALESCE(VALUES(pickup_code), pickup_code),
         pickup_location = COALESCE(VALUES(pickup_location), pickup_location),
-        eta = VALUES(eta), last_synced_at = VALUES(last_synced_at), updated_at = UTC_TIMESTAMP(3)`,
-      [randomUUID(), userId, candidate.trackingNo, carrierCode, carrierName, detail.status, detail.statusDetail ?? null, detail.location ?? null, pickup.code ?? null, pickup.location ?? null, detail.eta ?? null, new Date(now)],
+        eta = VALUES(eta), query_phone = COALESCE(VALUES(query_phone), query_phone),
+        last_synced_at = VALUES(last_synced_at), updated_at = UTC_TIMESTAMP(3)`,
+      [randomUUID(), userId, candidate.trackingNo, carrierCode, carrierName, detail.status, detail.statusDetail ?? null, detail.location ?? null, pickup.code ?? null, pickup.location ?? null, detail.eta ?? null, candidate.phone ?? null, new Date(now)],
     )
     const [parcelRows] = await connection.query<MysqlParcelRow[]>(
       `SELECT id,user_id,tracking_no,carrier_code,carrier_name,status,status_detail,location,
-              pickup_code,pickup_location,eta,last_synced_at
+              pickup_code,pickup_location,eta,query_phone,last_synced_at
        FROM yijian_parcels WHERE user_id = ? AND tracking_no = ? AND carrier_code = ? LIMIT 1`,
       [userId, candidate.trackingNo, carrierCode],
     )

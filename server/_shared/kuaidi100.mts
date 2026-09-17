@@ -5,6 +5,11 @@ export type Kuaidi100TrackingCandidate = {
   trackingNo: string
   carrierCode?: string
   carrierName?: string
+  /**
+   * 收、寄件人的电话号码。快递100 官方文档明确「顺丰速运、顺丰快运、中通快递」为**必填**，
+   * 其他承运商选填。缺该参数时上游返回 408「快递公司参数异常：验证码错误」。
+   */
+  phone?: string
   initialTraces?: Kuaidi100Trace[]
 }
 
@@ -35,6 +40,57 @@ export type Kuaidi100Pickup = {
 }
 
 export const KUAIDI100_SUPPORTED_CARRIER_CODES: readonly string[] = ['shunfeng', 'jd', 'zto', 'yto', 'yunda', 'sto', 'jtexpress', 'deppon', 'ems', 'best', 'youshunda', 'anep', 'china_post', 'zjs']
+
+/**
+ * 快递100 要求必填 phone 的承运商编码。
+ * 依据官方《实时快递查询接口》文档：phone 字段「顺丰速运、顺丰快运、中通快递必填，其他快递公司选填」；
+ * 错误码表 408 =「快递公司参数异常：验证码错误 —— 电话号码校验不通过」。
+ * 本项目顺丰速运与顺丰快运共用 shunfeng 编码。
+ */
+export const KUAIDI100_PHONE_REQUIRED_CARRIER_CODES: readonly string[] = ['shunfeng', 'zto']
+
+export function requiresQueryPhone(carrierCode?: string | null): boolean {
+  const normalized = (carrierCode ?? '').trim().toLowerCase()
+  return normalized !== '' && KUAIDI100_PHONE_REQUIRED_CARRIER_CODES.includes(normalized)
+}
+
+/**
+ * 归一化收寄件人电话：接受手机号、座机、电商虚拟号「-」后的后四位。
+ * 返回 null 表示「给了但格式不可用」；调用方需自行区分「没给」与「给了但非法」。
+ */
+export function normalizeQueryPhone(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  if (!/^[0-9+\-\s()]{4,32}$/.test(trimmed)) return null
+  const digits = trimmed.replace(/[^0-9]/g, '')
+  if (digits.length < 4 || digits.length > 20) return null
+  return digits
+}
+
+/** 上游返回了业务错误码（非「单号无效」类）。保留 returnCode 供调用方做精确映射。 */
+export class Kuaidi100UpstreamError extends Error {
+  readonly returnCode: string
+
+  constructor(returnCode: string, message: string) {
+    super(message)
+    this.name = 'Kuaidi100UpstreamError'
+    this.returnCode = returnCode
+  }
+}
+
+/**
+ * 上游 408：电话号码校验不通过。
+ * 注意这与「账号权限」无关——2026-09-17 对照实验证明同一单号不带 phone 即 408、带 phone 即进入正常查询流程。
+ */
+export class Kuaidi100PhoneRequiredError extends Error {
+  readonly code = 'PHONE_REQUIRED' as const
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'Kuaidi100PhoneRequiredError'
+  }
+}
 
 export class Kuaidi100InvalidTrackingError extends Error {
   readonly code = 'INVALID_TRACKING_NO' as const
@@ -112,7 +168,9 @@ function ensureSuccess(payload: unknown): void {
   const status = record.status ?? record.success ?? record.result
   if (status === false || status === '0' || status === 0) {
     if (isInvalidTrackingResponse(record)) throw new Kuaidi100InvalidTrackingError()
-    throw new Error(messageFrom(payload) ?? '快递100查询失败')
+    // 保留 returnCode：调用方需要把 408 之类的参数类错误映射成用户能看懂、能自己修的提示，
+    // 而不是统一降级为「服务暂时不可用」——那会让用户完全无从下手。
+    throw new Kuaidi100UpstreamError(String(record.returnCode ?? ''), messageFrom(payload) ?? '快递100查询失败')
   }
 }
 
@@ -144,7 +202,11 @@ async function request(urlName: string, payload: Record<string, unknown>): Promi
   } catch {
     throw new Error(`快递100响应格式错误（HTTP ${response.status}）`)
   }
-  if (!response.ok) throw new Error(messageFrom(data) ?? `快递100请求失败（HTTP ${response.status}）`)
+  if (!response.ok) {
+    const record = data && typeof data === 'object' ? data as Record<string, unknown> : {}
+    // 用 HTTP_ 前缀与「上游业务码」区分开：否则 HTTP 500 会被误当成快递100 的 500「查询无结果」。
+    throw new Kuaidi100UpstreamError(`HTTP_${record.returnCode ?? response.status}`, messageFrom(data) ?? `快递100请求失败（HTTP ${response.status}）`)
+  }
   ensureSuccess(data)
   return data
 }
@@ -198,11 +260,25 @@ function tracesFrom(payload: Record<string, unknown>): Kuaidi100Trace[] {
 
 export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Promise<Kuaidi100TrackingDetail> {
   const resultv2 = env('KUAIDI100_RESULTV2')?.trim()
-  const payload = await request('KUAIDI100_TRACK_QUERY_URL', {
-    com: candidate.carrierCode ?? '',
-    num: candidate.trackingNo,
-    ...(resultv2 ? { resultv2 } : {}),
-  })
+  const phone = candidate.phone?.trim()
+  let payload: unknown
+  try {
+    payload = await request('KUAIDI100_TRACK_QUERY_URL', {
+      com: candidate.carrierCode ?? '',
+      num: candidate.trackingNo,
+      ...(phone ? { phone } : {}),
+      ...(resultv2 ? { resultv2 } : {}),
+    })
+  } catch (error) {
+    // 408 是「电话号码校验不通过」。分成两种情况给出不同指引：
+    // 没填 → 让他去填；填了仍不通过 → 号码与运单的收寄件人不一致，改号码而不是重试。
+    if (error instanceof Kuaidi100UpstreamError && error.returnCode === '408') {
+      throw new Kuaidi100PhoneRequiredError(phone
+        ? '手机号与运单的收寄件人不一致，请核对后重试'
+        : '该快递平台需填写收件人或寄件人手机号后才能查询')
+    }
+    throw error
+  }
   const record = payload as Record<string, unknown>
   const traces = tracesFrom(record)
   const latest = traces[0]

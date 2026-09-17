@@ -175,3 +175,12 @@ button:disabled{cursor:not-allowed}
 .trail-map-canvas{background:#fbfdfd}
 .trail-map-legend small{margin-left:auto}
 .trail-map-note{margin:8px 0 0;color:var(--soft);font-size:12px;line-height:1.5}
+
+/* 9. 手机号字段：中通/顺丰在快递100 为必填，缺参数时上游只会回「验证码错误」------
+   9.1 该字段默认不出现，仅当平台确定为中通/顺丰（或服务端要求）时插入，
+       因此不占用其他承运商的常规查询界面。
+   9.2 宽屏下独占一行：挤进第二列会把两个输入框都压到很窄，且它是条件出现的，
+       跨列展示不会影响未出现时的两列布局。 */
+.tracking-field.phone-field{grid-column:1/-1}
+.tracking-field .required-tag{margin-left:4px;padding:1px 5px;border-radius:6px;background:#fdeceb;color:#b3402f;font-size:11px;font-style:normal}
+.tracking-field.phone-field input{letter-spacing:.5px}
