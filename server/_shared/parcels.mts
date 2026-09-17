@@ -278,8 +278,11 @@ export async function saveParcel(userId: string, candidate: Kuaidi100TrackingCan
       status: detail.status === '已完成' || detail.status === '待取件' ? detail.status : '运输中',
       status_detail: detail.statusDetail ?? null,
       location: detail.location ?? null,
-      pickup_code: pickup.code ?? null,
-      pickup_location: pickup.location ?? null,
+      // 取件码只在「上游明确返回」或「用户确认取件」时才变化。
+      // 这里必须沿用已存的值：否则每次重新查询（含自动同步）都会把取件码覆盖成 null，
+      // 与产品承诺的「确认取件后立即删除」矛盾——删除应当只由确认取件触发。
+      pickup_code: pickup.code ?? existing?.row.pickup_code ?? null,
+      pickup_location: pickup.location ?? existing?.row.pickup_location ?? null,
       eta: detail.eta ?? null,
       last_synced_at: now,
     }
@@ -301,7 +304,8 @@ export async function saveParcel(userId: string, candidate: Kuaidi100TrackingCan
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))
        ON DUPLICATE KEY UPDATE
         carrier_name = VALUES(carrier_name), status = VALUES(status), status_detail = VALUES(status_detail),
-        location = VALUES(location), pickup_code = VALUES(pickup_code), pickup_location = VALUES(pickup_location),
+        location = VALUES(location), pickup_code = COALESCE(VALUES(pickup_code), pickup_code),
+        pickup_location = COALESCE(VALUES(pickup_location), pickup_location),
         eta = VALUES(eta), last_synced_at = VALUES(last_synced_at), updated_at = UTC_TIMESTAMP(3)`,
       [randomUUID(), userId, candidate.trackingNo, carrierCode, carrierName, detail.status, detail.statusDetail ?? null, detail.location ?? null, pickup.code ?? null, pickup.location ?? null, detail.eta ?? null, new Date(now)],
     )
