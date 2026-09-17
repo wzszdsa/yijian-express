@@ -309,7 +309,7 @@ curl -I https://wzzsl.fun/
 | `KUAIDI100_KEY` | 是 | 授权 key |
 | `KUAIDI100_CUSTOMER` | 是 | 客户编号 |
 | `KUAIDI100_TRACK_QUERY_URL` | 是 | `https://poll.kuaidi100.com/poll/query.do` |
-| `KUAIDI100_RESULTV2` | 否 | 开通行政区/坐标解析后设为 `5` |
+| `KUAIDI100_RESULTV2` | 否 | 行政区/坐标解析开关。**合法值仅 `1` / `4` / `8`**（`4` = 返回 `areaCenter` 坐标，本项目用此值）；填其他值上游不会返回坐标，地图将始终提示「承运商未返回坐标」 |
 
 ### 示例（请替换所有占位符）
 

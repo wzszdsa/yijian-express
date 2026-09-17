@@ -55,6 +55,27 @@ export function requiresQueryPhone(carrierCode?: string | null): boolean {
 }
 
 /**
+ * 快递100 `resultv2` 的合法取值。官方文档仅定义 1 / 4 / 8：
+ *   1 = 只返回行政区域名（不含坐标）；4 = 返回 `areaCenter` 坐标；8 = 返回坐标 + 完整行政区划。
+ * 传入其他值（例如常被误写的 `5`）上游**不报错也不返回坐标**，表现为地图永远提示
+ * 「承运商未返回坐标」——是一种静默失效。因此这里做白名单校验并显式告警。
+ */
+export const KUAIDI100_RESULTV2_VALUES: readonly string[] = ['1', '4', '8']
+
+let resultV2Warned = false
+
+export function resolveResultV2(): string | undefined {
+  const raw = env('KUAIDI100_RESULTV2')?.trim()
+  if (!raw) return undefined
+  if (KUAIDI100_RESULTV2_VALUES.includes(raw)) return raw
+  if (!resultV2Warned) {
+    resultV2Warned = true
+    console.warn(`[yijian:kuaidi100] KUAIDI100_RESULTV2="${raw}" 不是合法值（仅 1/4/8），已忽略；地图轨迹将无法显示坐标`)
+  }
+  return undefined
+}
+
+/**
  * 归一化收寄件人电话：接受手机号、座机、电商虚拟号「-」后的后四位。
  * 返回 null 表示「给了但格式不可用」；调用方需自行区分「没给」与「给了但非法」。
  */
@@ -259,7 +280,7 @@ function tracesFrom(payload: Record<string, unknown>): Kuaidi100Trace[] {
 }
 
 export async function queryTracking(candidate: Kuaidi100TrackingCandidate): Promise<Kuaidi100TrackingDetail> {
-  const resultv2 = env('KUAIDI100_RESULTV2')?.trim()
+  const resultv2 = resolveResultV2()
   const phone = candidate.phone?.trim()
   let payload: unknown
   try {
